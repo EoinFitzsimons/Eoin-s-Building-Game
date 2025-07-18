@@ -163,7 +163,6 @@
         <div class="modal-box">
             <h2>Options</h2>
             <button id="clear-scenery">Clear Scenery</button><br>
-            <button id="pixelate-world">Pixelate World</button><br>
             <button id="close-options">Close</button>
         </div>
     </div>
@@ -218,10 +217,6 @@
     });
     document.getElementById('clear-scenery').addEventListener('click', () => {
         window.dispatchEvent(new CustomEvent('clearScenery'));
-        optionsModal.style.display = 'none';
-    });
-    document.getElementById('pixelate-world').addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('pixelateWorld'));
         optionsModal.style.display = 'none';
     });
     document.getElementById('export-world').addEventListener('click', () => {
