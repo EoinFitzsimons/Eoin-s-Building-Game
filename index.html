@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Eoin's Building Game</title>
+    <!-- Three.js now imported as ES module in game.js -->
+    <style>
+        #options-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+        }
+        #options-modal .modal-box {
+            background: #145c2c;
+            border-radius: 24px;
+            padding: 40px 48px;
+            box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+            text-align: center;
+            color: #fff;
+        }
+        #options-modal h2 {
+            font-size: 2em;
+            margin-bottom: 24px;
+        }
+        #options-modal button {
+            background: #228b22;
+            color: #fff;
+            border: none;
+            border-radius: 16px;
+            padding: 14px 32px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin: 12px 0;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            transition: background 0.2s, transform 0.2s;
+        }
+        #options-modal button:hover {
+            background: #2e8b57;
+            transform: scale(1.08);
+        }
+        #pause-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        #pause-menu .menu-box {
+            background: #145c2c;
+            border-radius: 24px;
+            padding: 40px 48px;
+            box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        #pause-menu h2 {
+            color: #fff;
+            font-size: 2.2em;
+            margin-bottom: 32px;
+            text-shadow: 2px 2px 8px #145c2c;
+        }
+        #pause-menu button {
+            background: #228b22;
+            color: #fff;
+            border: none;
+            border-radius: 16px;
+            padding: 18px 40px;
+            font-size: 1.2em;
+            cursor: pointer;
+            margin: 16px 0;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            transition: background 0.2s, transform 0.2s;
+        }
+        #pause-menu button:hover {
+            background: #2e8b57;
+            transform: scale(1.08);
+        }
+        body {
+            background: linear-gradient(to bottom, #2e8b57 0%, #228b22 100%);
+            color: #fff;
+            font-family: 'Segoe UI', Verdana, Geneva, Tahoma, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+        }
+        h1 {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 8px #145c2c;
+        }
+        #three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            min-width: 100vw;
+            min-height: 100vh;
+            display: block;
+            z-index: 1;
+            border-radius: 0;
+        }
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            z-index: 2;
+            pointer-events: none;
+        }
+        #story {
+            font-size: 2em;
+            margin-bottom: 32px;
+            text-align: center;
+            color: #fff;
+            text-shadow: 2px 2px 8px #145c2c;
+            pointer-events: auto;
+        }
+        #choices {
+            display: flex;
+            flex-direction: row;
+            gap: 24px;
+            align-items: center;
+            margin-bottom: 48px;
+            pointer-events: auto;
+        }
+        #choices button {
+            background: #145c2c;
+            color: #fff;
+            border: none;
+            border-radius: 16px;
+            padding: 18px 40px;
+            font-size: 1.2em;
+            cursor: pointer;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            transition: background 0.2s, transform 0.2s;
+        }
+        #choices button:hover {
+            background: #228b22;
+            transform: scale(1.08);
+        }
+    </style>
+</head>
+<body>
+    <div id="options-modal">
+        <div class="modal-box">
+            <h2>Options</h2>
+            <button id="clear-scenery">Clear Scenery</button><br>
+            <button id="pixelate-world">Pixelate World</button><br>
+            <button id="close-options">Close</button>
+        </div>
+    </div>
+    <canvas id="three-canvas"></canvas>
+    <div id="overlay" style="pointer-events:none; background:rgba(0,0,0,0.15);">
+        <div style="font-size:2em;color:#fff;text-align:center;margin:32px 0;text-shadow:2px 2px 8px #145c2c;">
+            WASD to move, drag mouse to look<br>
+            Left click: Place block<br>
+            Right click: Break block
+        </div>
+    </div>
+    <div id="pause-menu">
+        <div class="menu-box">
+            <h2>Paused</h2>
+            <button id="reset-world">Reset World</button><br>
+            <button id="options-menu">Options</button><br>
+            <button id="export-world">Export World</button><br>
+            <button id="import-world">Import World</button><br>
+            <button id="resume-game">Resume</button>
+        </div>
+    </div>
+    <script type="module" src="./game.js"></script>
+    <script>
+    // Pause menu logic
+    const pauseMenu = document.getElementById('pause-menu');
+    const resumeBtn = document.getElementById('resume-game');
+    let isPaused = false;
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Escape') {
+            isPaused = !isPaused;
+            pauseMenu.style.display = isPaused ? 'flex' : 'none';
+            if (isPaused) {
+                document.exitPointerLock();
+            }
+        }
+    });
+    resumeBtn.addEventListener('click', () => {
+        isPaused = false;
+        pauseMenu.style.display = 'none';
+    });
+    // Button hooks for future logic
+    document.getElementById('reset-world').addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('resetWorld'));
+    });
+    const optionsModal = document.getElementById('options-modal');
+    const closeOptionsBtn = document.getElementById('close-options');
+    document.getElementById('options-menu').addEventListener('click', () => {
+        optionsModal.style.display = 'flex';
+    });
+    closeOptionsBtn.addEventListener('click', () => {
+        optionsModal.style.display = 'none';
+    });
+    document.getElementById('clear-scenery').addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('clearScenery'));
+        optionsModal.style.display = 'none';
+    });
+    document.getElementById('pixelate-world').addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('pixelateWorld'));
+        optionsModal.style.display = 'none';
+    });
+    document.getElementById('export-world').addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('exportWorld'));
+    });
+    document.getElementById('import-world').addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('importWorld'));
+        // After import, resume game and pointer lock
+        isPaused = false;
+        pauseMenu.style.display = 'none';
+        const canvas = document.getElementById('three-canvas');
+        if (canvas) {
+            canvas.requestPointerLock();
+        }
+    });
+    </script>
+</body>
+</html>
