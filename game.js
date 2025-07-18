@@ -212,10 +212,12 @@ function setupThreeScene() {
     river.position.set(0, -1.8, -20);
     threeScene.add(river);
     // (No path or cartoon guy in sandbox mode)
-    // Trees (random positions)
+    // Pixel/block style trees (random positions)
     for (let i = 0; i < 30; i++) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 7, 8), new THREE.MeshPhongMaterial({ color: 0x8d5524 }));
-        const leaves = new THREE.Mesh(new THREE.SphereGeometry(2.5 + Math.random(), 16, 16), new THREE.MeshPhongMaterial({ color: 0x228b22 }));
+        // Trunk as a box
+        const trunk = new THREE.Mesh(new THREE.BoxGeometry(1, 7, 1), new THREE.MeshLambertMaterial({ color: 0x8d5524 }));
+        // Leaves as a box
+        const leaves = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4), new THREE.MeshLambertMaterial({ color: 0x228b22 }));
         const x = Math.random() * 180 - 90;
         const z = Math.random() * 180 - 90;
         trunk.position.set(x, 2.5, z);
@@ -223,21 +225,31 @@ function setupThreeScene() {
         threeScene.add(trunk);
         threeScene.add(leaves);
         sceneryMeshes.push(trunk, leaves);
-        console.log('Tree created', {x, z});
+        console.log('Pixel tree created', {x, z});
     }
-    // Animated butterflies
+    // Pixel/block style butterflies
     for (let i = 0; i < 10; i++) {
-        const butterfly = createButterfly();
+        const butterfly = new THREE.Group();
+        // Body as a box
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, 0.3), new THREE.MeshLambertMaterial({ color: 0x333 }));
+        butterfly.add(body);
+        // Wings as boxes
+        const leftWing = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 2), new THREE.MeshLambertMaterial({ color: 0xff69b4 }));
+        leftWing.position.set(-0.7, 0.3, 0);
+        butterfly.add(leftWing);
+        const rightWing = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 2), new THREE.MeshLambertMaterial({ color: 0xff69b4 }));
+        rightWing.position.set(0.7, 0.3, 0);
+        butterfly.add(rightWing);
         butterfly.userData = { t: Math.random() * Math.PI * 2, speed: 0.01 + Math.random() * 0.02 };
         butterfly.position.set(Math.random() * 80 - 40, 6 + Math.random() * 8, Math.random() * 80 - 40);
         threeScene.add(butterfly);
         animatedObjects.push(butterfly);
         sceneryMeshes.push(butterfly);
-        console.log('Butterfly created', butterfly.position);
+        console.log('Pixel butterfly created', butterfly.position);
     }
-    // Sun
-    const sun = new THREE.Mesh(new THREE.SphereGeometry(8, 32, 32), new THREE.MeshBasicMaterial({ color: 0xfff7b2 }));
-    console.log('Sun created');
+    // Pixel/block style sun
+    const sun = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfff7b2 }));
+    console.log('Pixel sun created');
     sun.position.set(-60, 80, 0);
     threeScene.add(sun);
     sceneryMeshes.push(sun);
@@ -255,22 +267,7 @@ function setupThreeScene() {
 
     // Pixelate world logic
     window.addEventListener('pixelateWorld', () => {
-    console.log('Event: pixelateWorld');
-        // Make blocks pixelated and add bounding edges
-        if (window.blockMeshes) {
-            for (const block of window.blockMeshes) {
-                // Change material to pixelated look
-                block.material = new THREE.MeshBasicMaterial({ color: 0xc2b280, wireframe: false });
-                block.material.needsUpdate = true;
-                // Add bounding box helper if not present
-                if (!block.userData.edgeHelper) {
-                    const boxHelper = new THREE.BoxHelper(block, 0xff0000);
-                    boxHelper.visible = false;
-                    threeScene.add(boxHelper);
-                    block.userData.edgeHelper = boxHelper;
-                }
-            }
-        }
+    // Pixelate world option removed; now scenery is always pixel/block style
     });
 
     // ...existing code...
