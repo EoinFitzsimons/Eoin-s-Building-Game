@@ -156,9 +156,88 @@
             background: #228b22;
             transform: scale(1.08);
         }
+        /* Crosshair styles */
+        #crosshair {
+            position: fixed;
+            left: 50vw;
+            top: 50vh;
+            width: 32px;
+            height: 32px;
+            margin-left: -16px;
+            margin-top: -16px;
+            z-index: 100;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #crosshair-shape {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #crosshair-shape span {
+            position: absolute;
+            background: rgba(255,255,255,0.7);
+            border-radius: 2px;
+        }
+        #crosshair-shape .v {
+            left: 15px;
+            top: 6px;
+            width: 2px;
+            height: 20px;
+        }
+        #crosshair-shape .h {
+            top: 15px;
+            left: 6px;
+            width: 20px;
+            height: 2px;
+        }
+    /* Block selector UI */
+    #block-selector {
+        position: fixed;
+        left: 50vw;
+        bottom: 32px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: flex-end;
+        gap: 16px;
+        z-index: 101;
+        pointer-events: none;
+    }
+    .block-current, .block-next, .block-prev {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        border: 3px solid #fff;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+        opacity: 1;
+        transition: border 0.2s, box-shadow 0.2s, opacity 0.2s;
+    }
+    .block-current {
+        width: 56px;
+        height: 56px;
+        border: 4px solid #fff;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+        opacity: 1;
+    }
+    .block-next, .block-prev {
+        opacity: 0.6;
+    }
     </style>
 </head>
 <body>
+    <div id="block-selector">
+        <div class="block-prev" title="Previous block"></div>
+        <div class="block-current" title="Current block"></div>
+        <div class="block-next" title="Next block"></div>
+    </div>
+    <div id="crosshair">
+        <div id="crosshair-shape">
+            <span class="v"></span>
+            <span class="h"></span>
+        </div>
+    </div>
     <div id="options-modal">
         <div class="modal-box">
             <h2>Options</h2>
@@ -185,53 +264,5 @@
         </div>
     </div>
     <script type="module" src="./game.js"></script>
-    <script>
-    // Pause menu logic
-    const pauseMenu = document.getElementById('pause-menu');
-    const resumeBtn = document.getElementById('resume-game');
-    let isPaused = false;
-    document.addEventListener('keydown', (e) => {
-        if (e.code === 'Escape') {
-            isPaused = !isPaused;
-            pauseMenu.style.display = isPaused ? 'flex' : 'none';
-            if (isPaused) {
-                document.exitPointerLock();
-            }
-        }
-    });
-    resumeBtn.addEventListener('click', () => {
-        isPaused = false;
-        pauseMenu.style.display = 'none';
-    });
-    // Button hooks for future logic
-    document.getElementById('reset-world').addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('resetWorld'));
-    });
-    const optionsModal = document.getElementById('options-modal');
-    const closeOptionsBtn = document.getElementById('close-options');
-    document.getElementById('options-menu').addEventListener('click', () => {
-        optionsModal.style.display = 'flex';
-    });
-    closeOptionsBtn.addEventListener('click', () => {
-        optionsModal.style.display = 'none';
-    });
-    document.getElementById('clear-scenery').addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('clearScenery'));
-        optionsModal.style.display = 'none';
-    });
-    document.getElementById('export-world').addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('exportWorld'));
-    });
-    document.getElementById('import-world').addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('importWorld'));
-        // After import, resume game and pointer lock
-        isPaused = false;
-        pauseMenu.style.display = 'none';
-        const canvas = document.getElementById('three-canvas');
-        if (canvas) {
-            canvas.requestPointerLock();
-        }
-    });
-    </script>
 </body>
 </html>
