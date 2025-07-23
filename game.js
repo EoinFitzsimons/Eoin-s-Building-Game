@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
 
 // Global constants for world size and chunking
-const GROUND_SIZE = 1000;
+const GROUND_SIZE = 64;
 const GROUND_HEIGHT = 3;
 const CHUNK_SIZE = 32; // Reduced for better performance
 
@@ -29,7 +29,6 @@ window.addEventListener('resetWorld', () => {
 });
 // Ensure file ends with correct closing brace
 // (No-op, just fixes syntax)
-window.addEventListener('exportWorld', () => {
 window.addEventListener('exportWorld', () => {
     console.log('Event: exportWorld');
     // Export block positions as JSON
@@ -105,38 +104,68 @@ let cameraControls = {
     pitch: 0,
     dragging: false,
     lastX: 0,
-    lastY: 0
+    lastY: 0,
+    jumping: false,
+    jumpVelocity: 0,
+    onGround: true
 };
 
 // Player position in world
-let playerPos = new THREE.Vector3(0, GROUND_HEIGHT + 2, 0);
+// Helper to get the camera's forward direction as a normalized THREE.Vector3
+function getCameraDirection() {
+    if (!threeCamera) return new THREE.Vector3(0, 0, -1);
+    const direction = new THREE.Vector3();
+    threeCamera.getWorldDirection(direction);
+    return direction.normalize();
+}
+// Helper to find highest solid block at (x, z)
+function getHighestSolidY(x, z) {
+    for (let y = 40; y >= 0; y--) {
+        const key = `${Math.round(x)},${y},${Math.round(z)}`;
+        if (window.worldBlocks && window.worldBlocks.has(key)) {
+            return y;
+        }
+    }
+    return GROUND_HEIGHT; // Default to ground if no block found
+}
+
+// Set player on top of ground or highest block at (0,0)
+// Player is 1.8 blocks tall, so set Y to highest block + 1.8
+let playerPos = new THREE.Vector3(0, getHighestSolidY(0, 0) + 1.8, 0);
 
 // Block types and textures
+// Add more block types and textures
 const BLOCK_TYPES = [
     { name: 'grass', color: 0x4caf50 },
     { name: 'dirt', color: 0x8d5524 },
     { name: 'sand', color: 0xffe082 },
     { name: 'water', color: 0x4fc3f7 },
-    { name: 'stone', color: 0x888888 }
+    { name: 'stone', color: 0x888888 },
+    { name: 'wood', color: 0xdeb887 },
+    { name: 'leaves', color: 0x228b22 },
+    { name: 'brick', color: 0xb22222 },
+    { name: 'glass', color: 0x87ceeb },
+    { name: 'planks', color: 0xf5deb3 }
 ];
 let selectedBlockType = 0; // index into BLOCK_TYPES
 
 function updateBlockSelectorUI() {
-    const prev = document.querySelector('.block-prev');
-    const curr = document.querySelector('.block-current');
-    const next = document.querySelector('.block-next');
-    if (!prev || !curr || !next) return;
-    // Calculate indices
-    const prevIdx = (selectedBlockType - 1 + BLOCK_TYPES.length) % BLOCK_TYPES.length;
-    const nextIdx = (selectedBlockType + 1) % BLOCK_TYPES.length;
-    // Set colors
-    prev.style.background = `#${BLOCK_TYPES[prevIdx].color.toString(16).padStart(6, '0')}`;
-    curr.style.background = `#${BLOCK_TYPES[selectedBlockType].color.toString(16).padStart(6, '0')}`;
-    next.style.background = `#${BLOCK_TYPES[nextIdx].color.toString(16).padStart(6, '0')}`;
-    // Set tooltips
-    prev.title = BLOCK_TYPES[prevIdx].name;
-    curr.title = BLOCK_TYPES[selectedBlockType].name;
-    next.title = BLOCK_TYPES[nextIdx].name;
+    const bar = document.getElementById('block-bar');
+    if (!bar) return;
+    // Clear bar
+    bar.innerHTML = '';
+    BLOCK_TYPES.forEach((block, idx) => {
+        const item = document.createElement('div');
+        item.className = 'block-bar-item' + (idx === selectedBlockType ? ' selected' : '');
+        item.title = block.name;
+        item.style.background = `#${block.color.toString(16).padStart(6, '0')}`;
+        // Add label
+        const label = document.createElement('span');
+        label.className = 'block-label';
+        label.textContent = block.name;
+        item.appendChild(label);
+        bar.appendChild(item);
+    });
 }
 
 // Faint block outline for placement preview
@@ -159,19 +188,50 @@ function updatePlacementOutline() {
         const hit = intersects[0];
         if (hit.face) {
             const normal = hit.face.normal;
-            pos = hit.point.clone().add(normal.multiplyScalar(1));
+            // Place block directly adjacent to the face, no gap
+            const hitPos = hit.object.position;
+            console.log('[placeBlock] Hit face normal:', normal.x, normal.y, normal.z);
+            pos = new THREE.Vector3(
+                Math.round(hitPos.x + normal.x),
+                Math.round(hitPos.y + normal.y),
+                Math.round(hitPos.z + normal.z)
+            );
+            // Check adjacency
+            const neighborKey = `${pos.x - normal.x},${pos.y - normal.y},${pos.z - normal.z}`;
+            const belowKey = `${pos.x},${pos.y - 1},${pos.z}`;
+            if (!window.worldBlocks.has(neighborKey) && !window.worldBlocks.has(belowKey)) {
+                // If not adjacent, show outline on top of highest block at (x, z)
+                let highestY = -1;
+                for (let y = 40; y >= 0; y--) {
+                    const key = `${pos.x},${y},${pos.z}`;
+                    if (window.worldBlocks.has(key)) {
+                        highestY = y;
+                        break;
+                    }
+                }
+                pos.y = highestY + 1;
+            }
         } else {
             pos = hit.point.clone();
+            pos.x = Math.round(pos.x);
+            pos.y = Math.round(pos.y);
+            pos.z = Math.round(pos.z);
         }
-        pos.x = Math.round(pos.x);
-        pos.y = Math.round(pos.y);
-        pos.z = Math.round(pos.z);
     } else {
         // In front of camera
-        pos = threeCamera.position.clone().add(getCameraDirection().multiplyScalar(5));
-        pos.x = Math.round(pos.x);
-        pos.y = Math.round(pos.y);
-        pos.z = Math.round(pos.z);
+        const tempPos = threeCamera.position.clone().add(getCameraDirection().multiplyScalar(5));
+        const targetX = Math.round(tempPos.x);
+        const targetZ = Math.round(tempPos.z);
+        // Find the highest block at (x, z)
+        let highestY = -1;
+        for (let y = 40; y >= 0; y--) {
+            const key = `${targetX},${y},${targetZ}`;
+            if (window.worldBlocks.has(key)) {
+                highestY = y;
+                break;
+            }
+        }
+        pos = new THREE.Vector3(targetX, highestY + 1, targetZ);
     }
     // Don't show below ground
     if (pos.y < 0) {
@@ -191,35 +251,43 @@ function setupThreeScene() {
     console.log('setupThreeScene: canvas found');
     // Block storage
     window.blockMeshes = [];
-    // Block interaction (place/break)
-    canvas.addEventListener('mousedown', (e) => {
-        console.log('Canvas mousedown', {button: e.button, pointerLock: document.pointerLockElement === canvas});
-        if (document.pointerLockElement !== canvas) return;
-        if (e.button === 0) {
-            // Left click: place block
-            placeBlock();
-        } else if (e.button === 2) {
-            // Right click: break block
-            breakBlock();
-        }
-    });
-    // Prevent context menu on right click
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-    console.log('Canvas contextmenu prevented');
+    // Block interaction (place/break) - ensure listeners are only attached once
+    if (!canvas._blockListenersAttached) {
+        canvas.addEventListener('mousedown', (e) => {
+            // Only handle if pointer lock is active
+            if (document.pointerLockElement !== canvas) return;
+            if (e.button === 0) {
+                // Left click: place block
+                placeBlock();
+            } else if (e.button === 2) {
+                // Right click: break block
+                breakBlock();
+            }
+        });
+        // Prevent context menu on right click
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+        canvas._blockListenersAttached = true;
+        console.log('Canvas block listeners attached and contextmenu prevented');
+    }
     // Camera controls
     window.addEventListener('keydown', (e) => {
-        console.log('Keydown', e.code);
-        if (e.code === 'KeyW') cameraControls.forward = true;
-        if (e.code === 'KeyS') cameraControls.backward = true;
-        if (e.code === 'KeyA') cameraControls.left = true;
-        if (e.code === 'KeyD') cameraControls.right = true;
+    console.log('Keydown', e.code);
+    if (e.code === 'KeyW') cameraControls.forward = true;
+    if (e.code === 'KeyS') cameraControls.backward = true;
+    if (e.code === 'KeyA') cameraControls.left = true;
+    if (e.code === 'KeyD') cameraControls.right = true;
+    if (e.code === 'Space' && cameraControls.onGround) {
+        cameraControls.jumping = true;
+        cameraControls.jumpVelocity = 0.18; // Jump velocity for 1 block high
+        cameraControls.onGround = false;
+    }
     });
     window.addEventListener('keyup', (e) => {
-        console.log('Keyup', e.code);
-        if (e.code === 'KeyW') cameraControls.forward = false;
-        if (e.code === 'KeyS') cameraControls.backward = false;
-        if (e.code === 'KeyA') cameraControls.left = false;
-        if (e.code === 'KeyD') cameraControls.right = false;
+    console.log('Keyup', e.code);
+    if (e.code === 'KeyW') cameraControls.forward = false;
+    if (e.code === 'KeyS') cameraControls.backward = false;
+    if (e.code === 'KeyA') cameraControls.left = false;
+    if (e.code === 'KeyD') cameraControls.right = false;
     });
     // Pointer lock for immersive camera control
     canvas.addEventListener('click', () => {
@@ -326,8 +394,8 @@ window.renderedBlocks = window.renderedBlocks || new Map();
     // Helper to update visible chunk centered at (cx, cz)
     function updateVisibleChunk(cx, cz) {
         const newVisible = new Set();
-        for (let x = cx - CHUNK_SIZE/2; x < cx + CHUNK_SIZE/2; x++) {
-            for (let z = cz - CHUNK_SIZE/2; z < cz + CHUNK_SIZE/2; z++) {
+        for (let x = cx - GROUND_SIZE/2; x < cx + GROUND_SIZE/2; x++) {
+            for (let z = cz - GROUND_SIZE/2; z < cz + GROUND_SIZE/2; z++) {
                 for (let y = 0; y < GROUND_HEIGHT; y++) {
                     // y=0 is ground, y=1,2 are dirt
                     const key = `${x},${y},${z}`;
@@ -368,8 +436,8 @@ window.renderedBlocks = window.renderedBlocks || new Map();
         if (lastChunkX === null || lastChunkZ === null) {
             const px = Math.round(playerPos.x);
             const pz = Math.round(playerPos.z);
-            const chunkX = Math.floor(px / CHUNK_SIZE) * CHUNK_SIZE;
-            const chunkZ = Math.floor(pz / CHUNK_SIZE) * CHUNK_SIZE;
+            const chunkX = Math.floor(px / GROUND_SIZE) * GROUND_SIZE;
+            const chunkZ = Math.floor(pz / GROUND_SIZE) * GROUND_SIZE;
             updateVisibleChunk(chunkX, chunkZ);
             lastChunkX = chunkX;
             lastChunkZ = chunkZ;
@@ -418,7 +486,12 @@ function animateThreeScene() {
         requestAnimationFrame(animateThreeScene);
         // Camera movement and rendering logic should go here
         // Example camera movement (WASD + mouse)
-        const speed = 0.5;
+        const speed = 4; // restore to 4 blocks per second
+        // Frame timing for smooth movement
+        if (!animateThreeScene.lastTime) animateThreeScene.lastTime = performance.now();
+        const now = performance.now();
+        const deltaTime = (now - animateThreeScene.lastTime) / 1000;
+        animateThreeScene.lastTime = now;
         // Calculate direction from yaw/pitch
         const euler = new THREE.Euler(cameraControls.pitch, cameraControls.yaw, 0, 'YXZ');
         const forward = new THREE.Vector3(0, 0, -1).applyEuler(euler).normalize();
@@ -429,25 +502,61 @@ function animateThreeScene() {
         if (cameraControls.backward) moveVec.add(forward.clone().negate());
         if (cameraControls.left) moveVec.add(right.clone().negate());
         if (cameraControls.right) moveVec.add(right);
+        // Horizontal movement collision
         if (moveVec.lengthSq() > 0) {
-            moveVec.normalize().multiplyScalar(speed);
-            const nextPos = playerPos.clone().add(moveVec);
-            // Check collision: only move if no block at intended position (rounded to int)
-            const checkKey = `${Math.round(nextPos.x)},${Math.round(nextPos.y)},${Math.round(nextPos.z)}`;
-            if (!window.worldBlocks || !window.worldBlocks.has(checkKey)) {
-                if (nextPos.y >= 0) {
-                    playerPos.copy(nextPos);
-                }
-            } else {
-                // Optionally, allow sliding up if block is at feet but space above is empty (simple step-up)
-                const aboveKey = `${Math.round(nextPos.x)},${Math.round(nextPos.y)+1},${Math.round(nextPos.z)}`;
-                if (!window.worldBlocks.has(aboveKey) && nextPos.y >= 0) {
-                    playerPos.set(nextPos.x, nextPos.y+1, nextPos.z);
-                }
+            moveVec.normalize().multiplyScalar(speed * deltaTime);
+            const nextXZ = playerPos.clone().add(new THREE.Vector3(moveVec.x, 0, moveVec.z));
+            // Check if space at player's feet and head is empty AND block is visible
+            const footKey = `${Math.round(nextXZ.x)},${Math.floor(playerPos.y - 1.8)},${Math.round(nextXZ.z)}`;
+            const headKey = `${Math.round(nextXZ.x)},${Math.floor(playerPos.y)},${Math.round(nextXZ.z)}`;
+            const footBlock = window.renderedBlocks.get(footKey);
+            const headBlock = window.renderedBlocks.get(headKey);
+            const footVisible = footBlock && footBlock.visible !== false;
+            const headVisible = headBlock && headBlock.visible !== false;
+            if (!footVisible && !headVisible) {
+                playerPos.x = nextXZ.x;
+                playerPos.z = nextXZ.z;
             }
         }
-        if (playerPos.y < 0) playerPos.y = 0;
-        // Camera follows player at a fixed offset (first-person)
+        // Jumping and gravity
+        if (cameraControls.jumping) {
+            playerPos.y += cameraControls.jumpVelocity;
+            cameraControls.jumpVelocity -= 0.02; // gravity
+            // Check collision above
+            const aboveKey = `${Math.round(playerPos.x)},${Math.floor(playerPos.y)},${Math.round(playerPos.z)}`;
+            const aboveBlock = window.renderedBlocks.get(aboveKey);
+            const aboveVisible = aboveBlock && aboveBlock.visible !== false;
+            if (aboveVisible && cameraControls.jumpVelocity > 0) {
+                // Hit ceiling
+                playerPos.y = Math.floor(playerPos.y);
+                cameraControls.jumping = false;
+                cameraControls.jumpVelocity = 0;
+            }
+            // Land on ground or block (allow small tolerance)
+            const belowKey = `${Math.round(playerPos.x)},${Math.floor(playerPos.y - 1.8 + 0.1)},${Math.round(playerPos.z)}`;
+            const belowBlock = window.renderedBlocks.get(belowKey);
+            const belowVisible = belowBlock && belowBlock.visible !== false;
+            if (belowVisible && cameraControls.jumpVelocity <= 0) {
+                playerPos.y = Math.floor(playerPos.y);
+                cameraControls.jumping = false;
+                cameraControls.jumpVelocity = 0;
+                cameraControls.onGround = true;
+            }
+        } else {
+            // Gravity when not jumping
+            const belowKey = `${Math.round(playerPos.x)},${Math.floor(playerPos.y - 1.8 + 0.1)},${Math.round(playerPos.z)}`;
+            const belowBlock = window.renderedBlocks.get(belowKey);
+            const belowVisible = belowBlock && belowBlock.visible !== false;
+            if (!belowVisible) {
+                playerPos.y -= 0.08; // gravity
+                cameraControls.onGround = false;
+            } else {
+                cameraControls.onGround = true;
+            }
+        }
+        // Prevent player from going below ground
+        if (playerPos.y < GROUND_HEIGHT + 1.8) playerPos.y = GROUND_HEIGHT + 1.8;
+        // Camera follows player at correct height (first-person)
         threeCamera.position.copy(playerPos);
         threeCamera.up.set(0, 1, 0);
         threeCamera.quaternion.setFromEuler(euler);
@@ -480,23 +589,42 @@ function placeBlock() {
         const hit = intersects[0];
         if (hit.face) {
             const normal = hit.face.normal;
-            pos = hit.point.clone().add(normal); // Only add normal ONCE
-            pos.x = Math.round(pos.x);
-            pos.y = Math.round(pos.y);
-            pos.z = Math.round(pos.z);
-            // Allow placement if neighbor exists OR block below exists (for building up)
-            const neighborKey = `${pos.x - normal.x},${pos.y - normal.y},${pos.z - normal.z}`;
-            const belowKey = `${pos.x},${pos.y - 1},${pos.z}`;
-            if (window.worldBlocks.has(neighborKey) || window.worldBlocks.has(belowKey)) {
+            const hitPos = hit.object.position;
+            pos = new THREE.Vector3(
+                Math.round(hitPos.x + normal.x),
+                Math.round(hitPos.y + normal.y),
+                Math.round(hitPos.z + normal.z)
+            );
+            // Only allow placement if the target position is empty
+            const targetKey = `${pos.x},${pos.y},${pos.z}`;
+            if (!window.worldBlocks.has(targetKey)) {
                 valid = true;
             }
         }
-    } else {
-        // Place block in front of player only if there is a block below
-        pos = playerPos.clone().add(camDir.clone().multiplyScalar(5));
-        pos.x = Math.round(pos.x);
-        pos.y = Math.round(pos.y);
-        pos.z = Math.round(pos.z);
+    }
+    // If not valid, try placing on top of the highest block at (x, z)
+    if (!valid) {
+        // Use the intended x, z from raycast or player direction
+        let targetX, targetZ;
+        if (pos) {
+            targetX = pos.x;
+            targetZ = pos.z;
+        } else {
+            const tempPos = playerPos.clone().add(camDir.clone().multiplyScalar(5));
+            targetX = Math.round(tempPos.x);
+            targetZ = Math.round(tempPos.z);
+        }
+        // Find the highest block at (x, z)
+        let highestY = -1;
+        for (let y = 40; y >= 0; y--) {
+            const key = `${targetX},${y},${targetZ}`;
+            if (window.worldBlocks.has(key)) {
+                highestY = y;
+                break;
+            }
+        }
+        pos = new THREE.Vector3(targetX, highestY + 1, targetZ);
+        // Allow placement if block below exists (ground or any block)
         const belowKey = `${pos.x},${pos.y - 1},${pos.z}`;
         if (window.worldBlocks.has(belowKey)) {
             valid = true;
@@ -504,9 +632,13 @@ function placeBlock() {
     }
     if (!pos) return;
     console.log('[placeBlock] Target position:', pos.x, pos.y, pos.z, 'Valid:', valid);
-    // Don't place inside ground
-    if (pos.y < 0 || !valid) {
-        console.log('[placeBlock] Invalid placement (below ground or not adjacent to block).');
+    // Don't place below ground level
+    if (pos.y < 0) {
+        console.log('[placeBlock] Invalid placement (below ground).');
+        return;
+    }
+    if (!valid) {
+        console.log('[placeBlock] Invalid placement (not adjacent to block or ground).');
         return;
     }
     // Create block of selected type
@@ -514,57 +646,56 @@ function placeBlock() {
     const key = `${pos.x},${pos.y},${pos.z}`;
     // Update persistent world data
     window.worldBlocks.set(key, type);
-    // If block is in visible chunk, add mesh immediately
-    const px = Math.round(playerPos.x);
-    const pz = Math.round(playerPos.z);
-    const chunkX = Math.floor(px / 64) * 64;
-    const chunkZ = Math.floor(pz / 64) * 64;
-    if (
-        pos.x >= chunkX - 32 && pos.x < chunkX + 32 &&
-        pos.z >= chunkZ - 32 && pos.z < chunkZ + 32 &&
-        pos.y >= 0
-    ) {
-        // Only add mesh if not already present
-        const exists = window.blockMeshes.some(b => b.position.x === pos.x && b.position.y === pos.y && b.position.z === pos.z);
-        console.log('[placeBlock] Block exists at position?', exists);
-        if (!exists) {
-            const mat = new THREE.MeshLambertMaterial({ color: BLOCK_TYPES[type].color });
-            const block = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
-            block.position.set(pos.x, pos.y, pos.z);
-            let moveVec = new THREE.Vector3();
-            if (cameraControls.forward) moveVec.add(forward);
-            if (cameraControls.backward) moveVec.add(forward.clone().negate());
-            if (cameraControls.left) moveVec.add(right.clone().negate());
-            if (cameraControls.right) moveVec.add(right);
-            if (moveVec.lengthSq() > 0) {
-                moveVec.normalize().multiplyScalar(speed);
-                const nextPos = playerPos.clone();
-                nextPos.x += moveVec.x;
-                nextPos.z += moveVec.z;
-                // Find the highest solid block at the intended (x,z)
-                let highestY = -1;
-                for (let y = 40; y >= 0; y--) {
-                    const key = `${Math.round(nextPos.x)},${y},${Math.round(nextPos.z)}`;
-                    if (window.worldBlocks && window.worldBlocks.has(key)) {
-                        highestY = y;
-                        break;
-                    }
-                }
-                // Only move if the space above the highest block is empty
-                const aboveKey = `${Math.round(nextPos.x)},${highestY+1},${Math.round(nextPos.z)}`;
-                if (!window.worldBlocks.has(aboveKey)) {
-                    playerPos.x = nextPos.x;
-                    playerPos.z = nextPos.z;
-                    // Snap player to stand on top of the highest block
-                    playerPos.y = highestY + 1;
-                }
-            }
+    // Always add mesh for placed blocks, regardless of chunk
+    const exists = window.blockMeshes.some(b => b.position.x === pos.x && b.position.y === pos.y && b.position.z === pos.z);
+    console.log('[placeBlock] Block exists at position?', exists);
+    if (!exists) {
+        const blockTypeObj = BLOCK_TYPES[type];
+        let mat = new THREE.MeshLambertMaterial({ color: blockTypeObj.color });
+        // Add transparency for glass, leaves, water
+        if (blockTypeObj.name === 'glass') {
+            mat.transparent = true;
+            mat.opacity = 0.5;
         }
+        if (blockTypeObj.name === 'leaves') {
+            mat.transparent = true;
+            mat.opacity = 0.7;
+        }
+        if (blockTypeObj.name === 'water') {
+            mat.transparent = true;
+            mat.opacity = 0.6;
+        }
+        const block = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+        block.position.set(pos.x, pos.y, pos.z);
+        block.userData.blockType = type;
+        block.userData.blockName = blockTypeObj.name;
+        threeScene.add(block);
+        window.blockMeshes.push(block);
+        window.renderedBlocks.set(key, block);
     }
 } // <-- Add this closing brace to properly end placeBlock
 
 function breakBlock() {
-    // ...existing code...
+    // Raycast from camera to find block to break
+    const camDir = getCameraDirection();
+    const rayOrigin = playerPos.clone().add(camDir.clone().multiplyScalar(0.1));
+    const raycaster = new THREE.Raycaster();
+    raycaster.set(rayOrigin, camDir);
+    const intersects = raycaster.intersectObjects(window.blockMeshes, false);
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+        const block = hit.object;
+        const pos = block.position;
+        const key = `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)}`;
+        // Remove from scene
+        threeScene.remove(block);
+        // Remove from blockMeshes
+        window.blockMeshes = window.blockMeshes.filter(b => b !== block);
+        // Remove from renderedBlocks
+        window.renderedBlocks.delete(key);
+        // Remove from worldBlocks
+        window.worldBlocks.delete(key);
+    }
 }
 
 // Block type selection (1-5 keys)
@@ -628,8 +759,66 @@ console.log('Game initialization triggered');
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') {
         isPaused = !isPaused;
-        if (!isPaused) {
+        const pauseMenu = document.getElementById('pause-menu');
+        if (isPaused) {
+            if (pauseMenu) pauseMenu.style.display = 'flex';
+        } else {
+            if (pauseMenu) pauseMenu.style.display = 'none';
             requestAnimationFrame(animateThreeScene);
         }
+    }
+});
+
+// Wire up pause menu buttons to their functions
+window.addEventListener('DOMContentLoaded', () => {
+    const resetBtn = document.getElementById('reset-world');
+    const optionsBtn = document.getElementById('options-menu');
+    const exportBtn = document.getElementById('export-world');
+    const importBtn = document.getElementById('import-world');
+    const resumeBtn = document.getElementById('resume-game');
+    if (resetBtn) {
+        resetBtn.onclick = () => {
+            window.dispatchEvent(new Event('resetWorld'));
+            document.getElementById('pause-menu').style.display = 'none';
+            isPaused = false;
+            requestAnimationFrame(animateThreeScene);
+        };
+    }
+    if (optionsBtn) {
+        optionsBtn.onclick = () => {
+            document.getElementById('options-modal').style.display = 'flex';
+        };
+    }
+    if (exportBtn) {
+        exportBtn.onclick = () => {
+            window.dispatchEvent(new Event('exportWorld'));
+        };
+    }
+    if (importBtn) {
+        importBtn.onclick = () => {
+            window.dispatchEvent(new Event('importWorld'));
+        };
+    }
+    if (resumeBtn) {
+        resumeBtn.onclick = () => {
+            document.getElementById('pause-menu').style.display = 'none';
+            isPaused = false;
+            requestAnimationFrame(animateThreeScene);
+        };
+    }
+    // Options modal close button
+    const closeOptionsBtn = document.getElementById('close-options');
+    if (closeOptionsBtn) {
+        closeOptionsBtn.onclick = () => {
+            document.getElementById('options-modal').style.display = 'none';
+        };
+    }
+    // Clear scenery button
+    const clearSceneryBtn = document.getElementById('clear-scenery');
+    if (clearSceneryBtn) {
+        clearSceneryBtn.onclick = () => {
+            window.dispatchEvent(new Event('clearScenery'));
+            document.getElementById('options-modal').style.display = 'none';
+        };
     }
 });

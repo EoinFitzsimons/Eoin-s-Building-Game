@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <title>Eoin's Building Game</title>
     <!-- Three.js now imported as ES module in game.js -->
     <style>
@@ -194,43 +195,73 @@
             height: 2px;
         }
     /* Block selector UI */
-    #block-selector {
-        position: fixed;
-        left: 50vw;
-        bottom: 32px;
-        transform: translateX(-50%);
-        display: flex;
-        align-items: flex-end;
-        gap: 16px;
-        z-index: 101;
-        pointer-events: none;
-    }
-    .block-current, .block-next, .block-prev {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        border: 3px solid #fff;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.25);
-        opacity: 1;
-        transition: border 0.2s, box-shadow 0.2s, opacity 0.2s;
-    }
-    .block-current {
-        width: 56px;
-        height: 56px;
-        border: 4px solid #fff;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.35);
-        opacity: 1;
-    }
-    .block-next, .block-prev {
-        opacity: 0.6;
-    }
+        #block-bar {
+            position: fixed;
+            left: 50vw;
+            bottom: 80px;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            gap: 18px;
+            z-index: 101;
+            pointer-events: none;
+            background: rgba(20, 92, 44, 0.85);
+            border-radius: 16px;
+            padding: 16px 32px 12px 32px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+            min-width: 480px;
+        }
+        .block-bar-item {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+            opacity: 1;
+            transition: border 0.2s, box-shadow 0.2s, opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .block-bar-item.selected {
+            border: 4px solid #ffd700;
+            box-shadow: 0 0 0 4px #fff, 0 4px 24px rgba(0,0,0,0.35);
+            z-index: 2;
+        }
+        .block-bar-item .block-label {
+            position: absolute;
+            bottom: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.9em;
+            color: #fff;
+            text-shadow: 1px 1px 6px #145c2c;
+            pointer-events: none;
+        }
+        #instructions-bar {
+            position: fixed;
+            left: 50vw;
+            bottom: 16px;
+            transform: translateX(-50%);
+            background: rgba(20, 92, 44, 0.92);
+            color: #fff;
+            font-size: 1.3em;
+            text-align: center;
+            padding: 18px 48px;
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.25);
+            z-index: 102;
+            pointer-events: none;
+            text-shadow: 2px 2px 8px #145c2c;
+        }
     </style>
 </head>
 <body>
-    <div id="block-selector">
-        <div class="block-prev" title="Previous block"></div>
-        <div class="block-current" title="Current block"></div>
-        <div class="block-next" title="Next block"></div>
+    <div id="block-bar"></div>
+    <div id="instructions-bar">
+        WASD to move &nbsp;|&nbsp; Drag mouse to look &nbsp;|&nbsp; Left click: Place block &nbsp;|&nbsp; Right click: Break block &nbsp;|&nbsp; 1-9: Select block
     </div>
     <div id="crosshair">
         <div id="crosshair-shape">
@@ -246,13 +277,7 @@
         </div>
     </div>
     <canvas id="three-canvas"></canvas>
-    <div id="overlay" style="pointer-events:none; background:rgba(0,0,0,0.15);">
-        <div style="font-size:2em;color:#fff;text-align:center;margin:32px 0;text-shadow:2px 2px 8px #145c2c;">
-            WASD to move, drag mouse to look<br>
-            Left click: Place block<br>
-            Right click: Break block
-        </div>
-    </div>
+    <!-- Instructions now in instructions-bar -->
     <div id="pause-menu">
         <div class="menu-box">
             <h2>Paused</h2>
