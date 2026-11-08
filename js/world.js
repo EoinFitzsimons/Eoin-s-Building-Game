@@ -391,7 +391,7 @@ export function meshChunk(world, chunk) {
 }
 
 // Voxel ray march (Amanatides & Woo). Returns { x, y, z, nx, ny, nz, id } or null.
-export function raycast(world, origin, direction, maxDistance) {
+export function raycast(world, origin, direction, maxDistance, hitLiquids = false) {
     let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
     const stepX = Math.sign(direction.x), stepY = Math.sign(direction.y), stepZ = Math.sign(direction.z);
     const tDeltaX = stepX ? Math.abs(1 / direction.x) : Infinity;
@@ -403,7 +403,7 @@ export function raycast(world, origin, direction, maxDistance) {
     let nx = 0, ny = 0, nz = 0, t = 0;
     while (t <= maxDistance) {
         const id = world.getBlock(x, y, z);
-        if (id !== BLOCK.AIR && !BLOCKS[id].liquid) {
+        if (id !== BLOCK.AIR && (hitLiquids || !BLOCKS[id].liquid)) {
             return { x, y, z, nx, ny, nz, id, distance: t };
         }
         if (tMaxX < tMaxY && tMaxX < tMaxZ) {

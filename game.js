@@ -591,10 +591,14 @@ function placeBlock() {
 }
 
 function breakBlock() {
-    if (!hitInfo) return false;
-    if (hitInfo.y === 0) { toast('The bedrock here is too hard to break'); return false; }
-    const id = hitInfo.id;
-    world.setBlock(hitInfo.x, hitInfo.y, hitInfo.z, BLOCK.AIR);
+    // Targeting ignores water so blocks can be placed through it, but water in front of the
+    // targeted block (or with nothing solid behind it) should still be removable.
+    const liquidHit = raycast(world, camera.position, cameraDirection(), REACH, true);
+    const target = liquidHit && BLOCKS[liquidHit.id].liquid && (!hitInfo || liquidHit.distance < hitInfo.distance) ? liquidHit : hitInfo;
+    if (!target) return false;
+    if (target.y === 0) { toast('The bedrock here is too hard to break'); return false; }
+    const id = target.id;
+    world.setBlock(target.x, target.y, target.z, BLOCK.AIR);
     audio.break(id);
     dirty = true;
     return true;
