@@ -3,12 +3,17 @@ import { BLOCKS } from './blocks.js';
 
 const STORAGE_KEY = 'eoins-building-game.muted';
 
+// Storage can be blocked (private browsing, strict privacy settings); fall back to unmuted.
+function readStoredMute() {
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (err) { return false; }
+}
+
 export class GameAudio {
     constructor() {
         this.ctx = null;
         this.master = null;
         this.wind = null;
-        this.muted = localStorage.getItem(STORAGE_KEY) === '1';
+        this.muted = readStoredMute();
         this.lastStep = 0;
     }
 
@@ -38,7 +43,7 @@ export class GameAudio {
 
     setMuted(muted) {
         this.muted = muted;
-        localStorage.setItem(STORAGE_KEY, muted ? '1' : '0');
+        try { localStorage.setItem(STORAGE_KEY, muted ? '1' : '0'); } catch (err) { /* storage blocked: keep the choice for this session only */ }
         if (this.master) {
             const now = this.ctx.currentTime;
             this.master.gain.cancelScheduledValues(now);
