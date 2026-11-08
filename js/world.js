@@ -220,6 +220,14 @@ export class World {
 
     notify(cx, cz) { for (const fn of this.listeners) fn(cx, cz); }
 
+    // Drops generated chunk data far from the player; edits live in editsByChunk, so a chunk
+    // regenerates identically when it is needed again.
+    unloadDistant(pcx, pcz, radius) {
+        for (const [key, chunk] of this.chunks) {
+            if (Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz)) > radius) this.chunks.delete(key);
+        }
+    }
+
     isSolid(x, y, z) {
         return BLOCKS[this.getBlock(Math.floor(x), Math.floor(y), Math.floor(z))].solid;
     }

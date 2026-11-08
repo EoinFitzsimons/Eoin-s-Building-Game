@@ -191,6 +191,7 @@ function refreshChunkQueue(force = false) {
     for (const [key, entry] of chunkMeshes) {
         if (chunkDistance(entry.cx, entry.cz) > r + 1) disposeChunkMesh(key);
     }
+    world.unloadDistant(pcx, pcz, r + 3);
 }
 
 function updateChunks(budgetMs) {
