@@ -318,6 +318,9 @@ function loadSave(data) {
     if (!data || data.game !== 'eoins-building-game' || typeof data.seed !== 'string' || !Array.isArray(data.edits)) {
         throw new Error('This file is not a saved world from Eoin\'s Building Game.');
     }
+    // Validate every edit before touching the current world so a bad file cannot discard it.
+    const validEdit = (e) => Array.isArray(e) && e.length >= 4 && e.slice(0, 4).every(Number.isInteger);
+    if (!data.edits.every(validEdit)) throw new Error('This saved world contains invalid block edits.');
     createWorld(data.seed);
     worldName = data.name || data.seed;
     world.loadEdits(data.edits);
