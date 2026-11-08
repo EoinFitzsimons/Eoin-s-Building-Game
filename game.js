@@ -851,7 +851,7 @@ function pause() {
     if (state !== 'playing') return;
     setState('paused');
     ui.pauseSummary.textContent = `Seed "${world.seedString}" · ${formatClock()} · ${world.edits.size} changes${dirty ? ' (unsaved)' : ''}`;
-    if (dirty) saveToLocal(true);
+    saveToLocal(true);
     updateModeBadge();
 }
 
@@ -902,8 +902,8 @@ ui.btnQuit.addEventListener('click', () => {
     showMenu();
 });
 
-window.addEventListener('beforeunload', () => { if (dirty && state !== 'menu') saveToLocal(true); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && dirty && state !== 'menu') saveToLocal(true); });
+window.addEventListener('beforeunload', () => { if (state !== 'menu') saveToLocal(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && state !== 'menu') saveToLocal(true); });
 
 // --- Main loop -------------------------------------------------------------------------------------
 let lastFrame = performance.now();
@@ -918,7 +918,7 @@ function frame(now) {
         updatePlayer(dt);
         updateTarget();
         ui.clock.textContent = formatClock();
-        if (dirty && now - lastAutosave > 30000) saveToLocal(true);
+        if (now - lastAutosave > 30000) saveToLocal(true); // position and time change constantly, so save regardless of edits
     } else if (state === 'menu') {
         // slow orbit around the spawn point behind the title screen
         menuAngle += dt * 0.08;
