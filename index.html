@@ -1,293 +1,103 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-GB">
 <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Eoin's Building Game</title>
-    <!-- Three.js now imported as ES module in game.js -->
-    <style>
-        #options-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0,0,0,0.6);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 20;
-        }
-        #options-modal .modal-box {
-            background: #145c2c;
-            border-radius: 24px;
-            padding: 40px 48px;
-            box-shadow: 0 4px 32px rgba(0,0,0,0.5);
-            text-align: center;
-            color: #fff;
-        }
-        #options-modal h2 {
-            font-size: 2em;
-            margin-bottom: 24px;
-        }
-        #options-modal button {
-            background: #228b22;
-            color: #fff;
-            border: none;
-            border-radius: 16px;
-            padding: 14px 32px;
-            font-size: 1.1em;
-            cursor: pointer;
-            margin: 12px 0;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
-            transition: background 0.2s, transform 0.2s;
-        }
-        #options-modal button:hover {
-            background: #2e8b57;
-            transform: scale(1.08);
-        }
-        #pause-menu {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0,0,0,0.7);
-            display: none;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-        }
-        #pause-menu .menu-box {
-            background: #145c2c;
-            border-radius: 24px;
-            padding: 40px 48px;
-            box-shadow: 0 4px 32px rgba(0,0,0,0.5);
-            text-align: center;
-        }
-        #pause-menu h2 {
-            color: #fff;
-            font-size: 2.2em;
-            margin-bottom: 32px;
-            text-shadow: 2px 2px 8px #145c2c;
-        }
-        #pause-menu button {
-            background: #228b22;
-            color: #fff;
-            border: none;
-            border-radius: 16px;
-            padding: 18px 40px;
-            font-size: 1.2em;
-            cursor: pointer;
-            margin: 16px 0;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
-            transition: background 0.2s, transform 0.2s;
-        }
-        #pause-menu button:hover {
-            background: #2e8b57;
-            transform: scale(1.08);
-        }
-        body {
-            background: linear-gradient(to bottom, #2e8b57 0%, #228b22 100%);
-            color: #fff;
-            font-family: 'Segoe UI', Verdana, Geneva, Tahoma, sans-serif;
-            min-height: 100vh;
-            margin: 0;
-        }
-        h1 {
-            text-align: center;
-            margin-top: 30px;
-            font-size: 2.5em;
-            text-shadow: 2px 2px 8px #145c2c;
-        }
-        #three-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw !important;
-            height: 100vh !important;
-            min-width: 100vw;
-            min-height: 100vh;
-            display: block;
-            z-index: 1;
-            border-radius: 0;
-        }
-        #overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: center;
-            z-index: 2;
-            pointer-events: none;
-        }
-        #story {
-            font-size: 2em;
-            margin-bottom: 32px;
-            text-align: center;
-            color: #fff;
-            text-shadow: 2px 2px 8px #145c2c;
-            pointer-events: auto;
-        }
-        #choices {
-            display: flex;
-            flex-direction: row;
-            gap: 24px;
-            align-items: center;
-            margin-bottom: 48px;
-            pointer-events: auto;
-        }
-        #choices button {
-            background: #145c2c;
-            color: #fff;
-            border: none;
-            border-radius: 16px;
-            padding: 18px 40px;
-            font-size: 1.2em;
-            cursor: pointer;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
-            transition: background 0.2s, transform 0.2s;
-        }
-        #choices button:hover {
-            background: #228b22;
-            transform: scale(1.08);
-        }
-        /* Crosshair styles */
-        #crosshair {
-            position: fixed;
-            left: 50vw;
-            top: 50vh;
-            width: 32px;
-            height: 32px;
-            margin-left: -16px;
-            margin-top: -16px;
-            z-index: 100;
-            pointer-events: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #crosshair-shape {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-        #crosshair-shape span {
-            position: absolute;
-            background: rgba(255,255,255,0.7);
-            border-radius: 2px;
-        }
-        #crosshair-shape .v {
-            left: 15px;
-            top: 6px;
-            width: 2px;
-            height: 20px;
-        }
-        #crosshair-shape .h {
-            top: 15px;
-            left: 6px;
-            width: 20px;
-            height: 2px;
-        }
-    /* Block selector UI */
-        #block-bar {
-            position: fixed;
-            left: 50vw;
-            bottom: 80px;
-            transform: translateX(-50%);
-            display: flex;
-            flex-direction: row;
-            align-items: flex-end;
-            gap: 18px;
-            z-index: 101;
-            pointer-events: none;
-            background: rgba(20, 92, 44, 0.85);
-            border-radius: 16px;
-            padding: 16px 32px 12px 32px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.25);
-            min-width: 480px;
-        }
-        .block-bar-item {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-            border: 3px solid #fff;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.25);
-            opacity: 1;
-            transition: border 0.2s, box-shadow 0.2s, opacity 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-        .block-bar-item.selected {
-            border: 4px solid #ffd700;
-            box-shadow: 0 0 0 4px #fff, 0 4px 24px rgba(0,0,0,0.35);
-            z-index: 2;
-        }
-        .block-bar-item .block-label {
-            position: absolute;
-            bottom: -22px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.9em;
-            color: #fff;
-            text-shadow: 1px 1px 6px #145c2c;
-            pointer-events: none;
-        }
-        #instructions-bar {
-            position: fixed;
-            left: 50vw;
-            bottom: 16px;
-            transform: translateX(-50%);
-            background: rgba(20, 92, 44, 0.92);
-            color: #fff;
-            font-size: 1.3em;
-            text-align: center;
-            padding: 18px 48px;
-            border-radius: 16px;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.25);
-            z-index: 102;
-            pointer-events: none;
-            text-shadow: 2px 2px 8px #145c2c;
-        }
-    </style>
+    <meta name="description" content="A first-person voxel building sandbox with procedurally generated terrain, a day and night cycle, blueprints and synthesised sound. Runs entirely in the browser." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 30 9v14L16 30 2 23V9z' fill='%235a9a3c'/%3E%3Cpath d='M16 2 30 9 16 16 2 9z' fill='%2384c45a'/%3E%3Cpath d='M16 16v14L2 23V9z' fill='%238a5a34'/%3E%3Cpath d='M16 16v14l14-7V9z' fill='%23633f22'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div id="block-bar"></div>
-    <div id="instructions-bar">
-        WASD to move &nbsp;|&nbsp; Drag mouse to look &nbsp;|&nbsp; Left click: Place block &nbsp;|&nbsp; Right click: Break block &nbsp;|&nbsp; 1-9: Select block
+    <canvas id="game-canvas"></canvas>
+    <div id="underwater-tint" hidden></div>
+
+    <!-- Heads-up display shown while playing -->
+    <div id="hud" hidden>
+        <div id="crosshair" aria-hidden="true"><span class="v"></span><span class="h"></span></div>
+        <div id="top-left">
+            <div id="clock" class="badge">Day 1 · 08:00</div>
+            <div id="mode-badge" class="badge">Build mode</div>
+            <div id="mute-badge" class="badge" hidden>Sound off</div>
+        </div>
+        <div id="blueprint-panel" hidden>
+            <h3>Blueprints</h3>
+            <ul id="blueprint-list"></ul>
+            <p class="small">Scroll or [ ] to choose · R to rotate · Left click to stamp · B to leave</p>
+        </div>
+        <div id="bottom-centre">
+            <div id="block-name">Grass</div>
+            <div id="hotbar"></div>
+            <div id="hint-bar">
+                WASD move · Space jump · Shift sprint · F fly · Left click place · Right click break · Middle click pick · Wheel or 1-9 choose block · Tab next page · B blueprints · N skip time · M mute · Esc menu · H hide hints
+            </div>
+        </div>
+        <div id="toast" hidden></div>
     </div>
-    <div id="crosshair">
-        <div id="crosshair-shape">
-            <span class="v"></span>
-            <span class="h"></span>
+
+    <div id="loading-screen" class="screen">
+        <div class="panel loading-panel">
+            <div class="spinner"></div>
+            <p id="loading-text">Shaping the land…</p>
         </div>
     </div>
-    <div id="options-modal">
-        <div class="modal-box">
-            <h2>Options</h2>
-            <button id="clear-scenery">Clear Scenery</button><br>
-            <button id="close-options">Close</button>
+
+    <!-- Start menu -->
+    <div id="start-menu" class="screen" hidden>
+        <div class="panel start-panel">
+            <h1 class="title">Eoin's Building Game</h1>
+            <p class="tagline">A first-person voxel sandbox. Wander the hills, dig and build with eighteen kinds of block, stamp whole structures with blueprints, and watch the sun set over your work.</p>
+            <div class="menu-actions">
+                <button id="btn-continue" class="primary" hidden>Continue saved world</button>
+                <p id="save-summary" class="small" hidden></p>
+                <div class="seed-row">
+                    <label for="seed-input">World seed</label>
+                    <input id="seed-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" />
+                    <button id="btn-random-seed" class="icon-button" title="Random seed" aria-label="Random seed">⟳</button>
+                </div>
+                <button id="btn-new">New world</button>
+                <button id="btn-import-start">Import world from file</button>
+            </div>
+            <details class="instructions" open>
+                <summary>How to play</summary>
+                <table>
+                    <tr><th>Move</th><td>W A S D · Space to jump · Shift to sprint · F to toggle flying</td></tr>
+                    <tr><th>Look</th><td>Move the mouse (click the world to capture the pointer)</td></tr>
+                    <tr><th>Build</th><td>Left click places the selected block · Right click breaks · Middle click picks the block you are looking at</td></tr>
+                    <tr><th>Blocks</th><td>Mouse wheel or keys 1–9 select · Tab shows the second page of blocks</td></tr>
+                    <tr><th>Blueprints</th><td>B opens blueprint mode · scroll or [ ] to choose · R rotates · left click stamps the structure</td></tr>
+                    <tr><th>Time</th><td>A full day lasts eight minutes · N skips ahead to dusk or dawn</td></tr>
+                    <tr><th>Menu</th><td>Esc pauses · the world saves automatically and can be exported as JSON</td></tr>
+                </table>
+            </details>
+            <p class="footer-note">Everything here is drawn and synthesised in code: no image or audio files are used.</p>
         </div>
     </div>
-    <canvas id="three-canvas"></canvas>
-    <!-- Instructions now in instructions-bar -->
-    <div id="pause-menu">
-        <div class="menu-box">
+
+    <!-- Pause menu -->
+    <div id="pause-menu" class="screen" hidden>
+        <div class="panel pause-panel">
             <h2>Paused</h2>
-            <button id="reset-world">Reset World</button><br>
-            <button id="options-menu">Options</button><br>
-            <button id="export-world">Export World</button><br>
-            <button id="import-world">Import World</button><br>
-            <button id="resume-game">Resume</button>
+            <p id="pause-summary" class="small"></p>
+            <div class="menu-actions">
+                <button id="btn-resume" class="primary">Resume</button>
+                <button id="btn-save">Save world</button>
+                <button id="btn-export">Export world as JSON</button>
+                <button id="btn-import">Import world from file</button>
+                <button id="btn-sound">Sound: on</button>
+                <label class="select-row">Render distance
+                    <select id="render-distance">
+                        <option value="4">Near (4 chunks)</option>
+                        <option value="6" selected>Normal (6 chunks)</option>
+                        <option value="8">Far (8 chunks)</option>
+                    </select>
+                </label>
+                <button id="btn-quit">Save and return to title</button>
+            </div>
         </div>
     </div>
+
+    <input id="import-file" type="file" accept=".json,application/json" hidden />
     <script type="module" src="./game.js"></script>
 </body>
 </html>
