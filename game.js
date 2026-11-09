@@ -814,8 +814,9 @@ function respawn() {
     player.vel.set(0, 0, 0);
     player.yaw = Math.PI * 0.25; player.pitch = -0.1;
     resetSurvival(false);
-    // waking at the start always happens in daylight
-    if (time.t >= 0.76) { time.day += 1; time.t = 0.24; } else if (time.t < 0.24) time.t = 0.24;
+    // waking at the start always leaves a full stretch of daylight: a death from the afternoon
+    // onwards wakes you the next morning, and a death at night wakes you at dawn
+    if (time.t >= 0.6) { time.day += 1; time.t = 0.24; } else if (time.t < 0.24) time.t = 0.24;
     renderVitals();
     setState('playing');
     requestPointerLock();
