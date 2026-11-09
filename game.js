@@ -763,9 +763,22 @@ function updateVitals(dt, moving) {
     }
 }
 
+// A creature can only strike when nothing solid stands between it and the player.
+function creatureCanReach(enemy) {
+    const from = enemy.pos.clone(); from.y += enemy.def.height * 0.7;
+    const to = player.pos.clone(); to.y += PLAYER.height * 0.6;
+    const dir = to.clone().sub(from);
+    const dist = dir.length();
+    if (dist < 1e-3) return true;
+    dir.divideScalar(dist);
+    const hit = raycast(world, from, dir, dist);
+    return !hit;
+}
+
 function damagePlayer(amount, source, cause = 'attack') {
     if (mode !== 'survival' || state !== 'playing' || amount <= 0) return false;
     if (cause === 'attack' && survival.hurtCooldown > 0) return false;
+    if (source && source.def && !creatureCanReach(source)) return false;
     survival.health = Math.max(0, survival.health - amount);
     survival.hurtCooldown = 0.6;
     survival.regenClock = 0;
