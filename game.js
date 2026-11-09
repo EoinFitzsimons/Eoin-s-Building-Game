@@ -767,7 +767,8 @@ function updateVitals(dt, moving) {
     }
 }
 
-// A creature can only strike when nothing solid stands between it and the player.
+// A creature can only strike when nothing solid stands between it and the player. Torches,
+// bushes and water are not cover, so the line is sampled against solid blocks rather than raycast.
 function creatureCanReach(enemy) {
     const from = enemy.pos.clone(); from.y += enemy.def.height * 0.7;
     const to = player.pos.clone(); to.y += PLAYER.height * 0.6;
@@ -775,8 +776,11 @@ function creatureCanReach(enemy) {
     const dist = dir.length();
     if (dist < 1e-3) return true;
     dir.divideScalar(dist);
-    const hit = raycast(world, from, dir, dist);
-    return !hit;
+    const step = 0.2;
+    for (let d = step; d < dist; d += step) {
+        if (world.isSolid(from.x + dir.x * d, from.y + dir.y * d, from.z + dir.z * d)) return false;
+    }
+    return true;
 }
 
 function damagePlayer(amount, source, cause = 'attack') {
