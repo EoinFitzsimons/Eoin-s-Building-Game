@@ -1108,8 +1108,9 @@ function craftRecipe(index) {
     if (!recipe) return false;
     const result = craft(survival.inventory, recipe);
     if (!result) { toast('You need more materials for that'); return false; }
+    if (result.full) { toast('No room in your inventory for that'); return false; }
     audio.craft();
-    toast(`Crafted ${result.made} × ${ITEMS[recipe.out].name}${result.dropped ? ' (inventory full, some lost)' : ''}`);
+    toast(`Crafted ${result.made} × ${ITEMS[recipe.out].name}`);
     dirty = true;
     renderRecipes();
     renderHotbar();

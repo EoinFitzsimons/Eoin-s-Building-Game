@@ -141,11 +141,15 @@ export function canCraft(inv, recipe) {
     return Object.entries(recipe.needs).every(([key, n]) => countItem(inv, key) >= n);
 }
 
+// Crafts only when the result also fits: the recipe is rehearsed on a copy of the inventory first,
+// so a full inventory never swallows the ingredients without handing back the item.
 export function craft(inv, recipe) {
     if (!canCraft(inv, recipe)) return false;
-    for (const [key, n] of Object.entries(recipe.needs)) removeFromInventory(inv, key, n);
-    const left = addToInventory(inv, recipe.out, recipe.count);
-    return { made: recipe.count - left, dropped: left };
+    const trial = inv.map(slot => slot ? { ...slot } : null);
+    for (const [key, n] of Object.entries(recipe.needs)) removeFromInventory(trial, key, n);
+    if (addToInventory(trial, recipe.out, recipe.count) > 0) return { made: 0, full: true };
+    for (let i = 0; i < inv.length; i++) inv[i] = trial[i];
+    return { made: recipe.count, full: false };
 }
 
 export function serialiseInventory(inv) {
