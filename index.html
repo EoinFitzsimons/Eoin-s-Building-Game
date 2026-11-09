@@ -16,16 +16,26 @@
     <div id="hud" hidden>
         <div id="crosshair" aria-hidden="true"><span class="v"></span><span class="h"></span></div>
         <div id="top-left">
-            <div id="clock" class="badge">Day 1 · 08:00</div>
+            <div id="clock-widget" class="badge">
+                <canvas id="sky-arc" width="180" height="56"></canvas>
+                <div id="clock">Day 1 · 08:00</div>
+                <div id="clock-phase">Morning</div>
+            </div>
             <div id="mode-badge" class="badge">Build mode</div>
             <div id="mute-badge" class="badge" hidden>Sound off</div>
         </div>
+        <div id="mine-progress" hidden></div>
+        <div id="target-label" hidden></div>
         <div id="blueprint-panel" hidden>
             <h3>Blueprints</h3>
             <ul id="blueprint-list"></ul>
             <p class="small">Scroll or [ ] to choose · R to rotate · Left click to stamp · B to leave</p>
         </div>
         <div id="bottom-centre">
+            <div id="vitals" hidden>
+                <canvas id="health-bar" width="220" height="22" title="Health"></canvas>
+                <canvas id="hunger-bar" width="220" height="22" title="Hunger"></canvas>
+            </div>
             <div id="block-name">Grass</div>
             <div id="hotbar"></div>
             <div id="hint-bar">
@@ -34,6 +44,7 @@
         </div>
         <div id="toast" hidden></div>
     </div>
+    <div id="damage-flash" hidden></div>
 
     <div id="loading-screen" class="screen">
         <div class="panel loading-panel">
@@ -46,7 +57,7 @@
     <div id="start-menu" class="screen" hidden>
         <div class="panel start-panel">
             <h1 class="title">Eoin's Building Game</h1>
-            <p class="tagline">A first-person voxel sandbox. Wander the hills, dig and build with eighteen kinds of block, stamp whole structures with blueprints, and watch the sun set over your work.</p>
+            <p class="tagline">A first-person voxel sandbox. Build freely in Creative with twenty-one kinds of block and blueprints, or play Survival: gather, craft tools, keep yourself fed and hold out against the creatures that roam at night.</p>
             <div class="menu-actions">
                 <button id="btn-continue" class="primary" hidden>Continue saved world</button>
                 <p id="save-summary" class="small" hidden></p>
@@ -54,6 +65,14 @@
                     <label for="seed-input">World seed</label>
                     <input id="seed-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" />
                     <button id="btn-random-seed" class="icon-button" title="Random seed" aria-label="Random seed">⟳</button>
+                </div>
+                <div class="mode-row" role="radiogroup" aria-label="Game mode">
+                    <button class="mode-option selected" data-mode="creative" role="radio" aria-checked="true">
+                        <strong>Creative</strong><span>Every block, flying and blueprints. Build without limits.</span>
+                    </button>
+                    <button class="mode-option" data-mode="survival" role="radio" aria-checked="false">
+                        <strong>Survival</strong><span>Gather, craft tools, eat, and hold out against the night.</span>
+                    </button>
                 </div>
                 <button id="btn-new">New world</button>
                 <button id="btn-import-start">Import world from file</button>
@@ -66,7 +85,8 @@
                     <tr><th>Build</th><td>Left click places the selected block · Right click breaks · Middle click picks the block you are looking at</td></tr>
                     <tr><th>Blocks</th><td>Mouse wheel or keys 1–9 select · Tab shows the second page of blocks</td></tr>
                     <tr><th>Blueprints</th><td>B opens blueprint mode · scroll or [ ] to choose · R rotates · left click stamps the structure</td></tr>
-                    <tr><th>Time</th><td>A full day lasts eight minutes · N skips ahead to dusk or dawn</td></tr>
+                    <tr><th>Survival</th><td>Hold right click to mine · C opens crafting · left click eats food or attacks with the held tool · watch your health and hunger</td></tr>
+                    <tr><th>Time</th><td>A full day lasts four minutes · N skips ahead to dusk or dawn</td></tr>
                     <tr><th>Menu</th><td>Esc pauses · the world saves automatically and can be exported as JSON</td></tr>
                 </table>
             </details>
@@ -93,6 +113,30 @@
                     </select>
                 </label>
                 <button id="btn-quit">Save and return to title</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Crafting panel (Survival) -->
+    <div id="craft-menu" class="screen" hidden>
+        <div class="panel craft-panel">
+            <h2>Crafting</h2>
+            <p class="small">Click a recipe to make it. Greyed recipes need more materials.</p>
+            <ul id="recipe-list"></ul>
+            <div class="menu-actions">
+                <button id="btn-craft-close" class="primary">Back to the world (C)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game over (Survival) -->
+    <div id="death-menu" class="screen" hidden>
+        <div class="panel death-panel">
+            <h2>You died</h2>
+            <p id="death-summary" class="small"></p>
+            <div class="menu-actions">
+                <button id="btn-respawn" class="primary">Respawn at the start</button>
+                <button id="btn-death-quit">Return to title</button>
             </div>
         </div>
     </div>

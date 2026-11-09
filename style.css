@@ -75,7 +75,51 @@ html, body {
     width: max-content;
     backdrop-filter: blur(4px);
 }
+#clock-widget { padding: 6px 10px 7px; text-align: center; }
+#sky-arc { display: block; width: 180px; height: 56px; }
+#clock { font-size: 0.95rem; margin-top: 2px; }
+#clock-phase { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
 #mode-badge.blueprint { border-color: var(--accent); color: var(--accent); }
+#mode-badge.survival { border-color: #e06b5a; color: #f0a090; }
+
+/* mining progress ring around the crosshair */
+#mine-progress {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: conic-gradient(var(--accent) var(--progress, 0%), rgba(255, 255, 255, 0.12) 0);
+    -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px);
+    mask: radial-gradient(circle, transparent 17px, #000 18px);
+}
+#target-label {
+    position: absolute;
+    left: 50%;
+    top: calc(50% + 34px);
+    transform: translateX(-50%);
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+}
+#target-label.warn { color: #f0a090; }
+
+#vitals { display: flex; gap: 14px; align-items: center; }
+#vitals canvas { width: 220px; height: 22px; image-rendering: pixelated; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8)); }
+
+#damage-flash {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+    background: radial-gradient(ellipse at center, rgba(200, 30, 30, 0) 40%, rgba(200, 30, 30, 0.55));
+    opacity: 0;
+    transition: opacity 0.35s;
+}
+#damage-flash.show { opacity: 1; transition: opacity 0.05s; }
 #mode-badge.flying { border-color: #8ec5ff; color: #8ec5ff; }
 #mute-badge { color: var(--muted); }
 
@@ -146,6 +190,27 @@ html, body {
     font-size: 0.7rem;
     color: var(--muted);
 }
+.slot .count {
+    position: absolute;
+    right: 5px;
+    bottom: 2px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-shadow: 0 1px 2px #000, 0 0 2px #000;
+}
+.slot .durability {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 4px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+.slot .durability i { display: block; height: 100%; background: var(--moss); }
+.slot .durability.low i { background: #e06b5a; }
+.slot.empty { border-style: dashed; opacity: 0.6; }
 #page-indicator { font-size: 0.75rem; color: var(--muted); align-self: center; padding: 0 6px; }
 #hint-bar {
     font-size: 0.8rem;
@@ -251,6 +316,35 @@ button:disabled { opacity: 0.4; cursor: default; }
     color: var(--text);
 }
 
+.mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mode-option { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; }
+.mode-option span { font-size: 0.8rem; color: var(--muted); font-weight: normal; }
+.mode-option.selected { border-color: var(--accent); background: rgba(240, 179, 90, 0.14); }
+.mode-option.selected strong { color: var(--accent); }
+
+.craft-panel { max-width: 640px; }
+#recipe-list { list-style: none; margin: 10px 0 14px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 52vh; overflow: auto; }
+#recipe-list li {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+}
+#recipe-list li:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.25); }
+#recipe-list li.unaffordable { opacity: 0.45; cursor: default; }
+#recipe-list li canvas { width: 40px; height: 40px; image-rendering: pixelated; }
+#recipe-list li .name { font-size: 0.92rem; }
+#recipe-list li .needs { font-size: 0.76rem; color: var(--muted); }
+#recipe-list li .needs b { color: var(--text); font-weight: 600; }
+#recipe-list li .needs b.short { color: #f0a090; }
+.death-panel { max-width: 420px; text-align: center; border-color: rgba(224, 107, 90, 0.5); }
+.death-panel h2 { color: #f0a090; font-size: 2rem; }
+
 .instructions summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 8px; }
 .instructions table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .instructions th { text-align: left; color: var(--accent); padding: 5px 10px 5px 0; vertical-align: top; width: 92px; font-weight: 600; }
@@ -288,6 +382,8 @@ body.thumbnail-mode .screen { display: none !important; }
 #thumbnail-overlay p { margin: 3px 0 0; font-size: 0.85rem; color: var(--muted); }
 
 @media (max-width: 700px) {
+    .mode-row { grid-template-columns: 1fr; }
+    #recipe-list { grid-template-columns: 1fr; }
     .panel { padding: 20px; }
     .title { font-size: 1.9rem; }
     .slot { width: 42px; height: 42px; }

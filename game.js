@@ -5,10 +5,15 @@ import { BLOCKS, BLOCK, PLACEABLE, buildAtlas, drawBlockIcon } from './js/blocks
 import { World, meshChunk, meshRegion, raycast, CHUNK_SIZE, WORLD_HEIGHT, SEA_LEVEL, chunkKey } from './js/world.js';
 import { BLUEPRINTS, blueprintCells, blueprintBaseOffset } from './js/blueprints.js';
 import { GameAudio } from './js/audio.js';
+import { ITEMS, RECIPES, HAND, dropsFor, breakPlan, newInventory, starterInventory, addToInventory, canCraft, craft, serialiseInventory, deserialiseInventory, drawItemIcon } from './js/items.js';
+import { ENEMY_TYPES, createEnemy, updateEnemy, hurtEnemy, rollDrops, rayHitsEnemy, disposeEnemy, enemyBox } from './js/enemies.js';
 
 const SAVE_KEY = 'eoins-building-game.world.v2';
 const SETTINGS_KEY = 'eoins-building-game.settings';
-const DAY_LENGTH = 480;           // seconds of real time per in-game day
+const DAY_LENGTH = 240;           // seconds of real time per in-game day (four minutes)
+const MAX_VITAL = 20;             // health and hunger both run from 0 to 20
+const MAX_ENEMIES = 8;
+const ATTACK_REACH = 4;
 const REACH = 6;                  // how far the player can place or break
 const PLAYER = { width: 0.6, height: 1.8, eye: 1.62 };
 const GRAVITY = 28;
@@ -31,13 +36,20 @@ const ui = {
     btnRandomSeed: $('btn-random-seed'), btnNew: $('btn-new'), btnImportStart: $('btn-import-start'),
     btnResume: $('btn-resume'), btnSave: $('btn-save'), btnExport: $('btn-export'), btnImport: $('btn-import'),
     btnSound: $('btn-sound'), renderDistance: $('render-distance'), btnQuit: $('btn-quit'),
-    pauseSummary: $('pause-summary'), importFile: $('import-file'), underwater: $('underwater-tint')
+    pauseSummary: $('pause-summary'), importFile: $('import-file'), underwater: $('underwater-tint'),
+    skyArc: $('sky-arc'), clockPhase: $('clock-phase'), mineProgress: $('mine-progress'), targetLabel: $('target-label'),
+    vitals: $('vitals'), healthBar: $('health-bar'), hungerBar: $('hunger-bar'), damageFlash: $('damage-flash'),
+    craftMenu: $('craft-menu'), recipeList: $('recipe-list'), btnCraftClose: $('btn-craft-close'),
+    deathMenu: $('death-menu'), deathSummary: $('death-summary'), btnRespawn: $('btn-respawn'), btnDeathQuit: $('btn-death-quit'),
+    modeOptions: Array.from(document.querySelectorAll('.mode-option'))
 };
 
 // --- Game state --------------------------------------------------------------------
 const settings = loadSettings();
 const audio = new GameAudio();
-let state = 'loading';            // loading | menu | playing | paused
+let state = 'loading';            // loading | menu | playing | paused | crafting | dead
+let mode = 'creative';            // creative | survival
+let chosenMode = 'creative';      // the start-menu selection
 let world = null;
 let worldName = '';
 let dirty = false;                // unsaved changes
@@ -58,6 +70,18 @@ let hintsHidden = false;
 let menuAngle = 0;
 let spawn = new THREE.Vector3();
 
+// Survival state: vitals, the inventory that backs the hotbar, timed mining and the creatures.
+const survival = {
+    health: MAX_VITAL, hunger: MAX_VITAL, inventory: newInventory(),
+    hungerClock: 0, regenClock: 0, starveClock: 0, hurtCooldown: 0, deaths: 0, kills: 0,
+    fallStart: null
+};
+const mining = { active: false, x: 0, y: 0, z: 0, progress: 0, seconds: 1, tickClock: 0 };
+const mouse = { left: false, right: false };
+const enemies = [];
+let spawnClock = 0;
+const heldLight = new THREE.PointLight(0xffb060, 0, 11, 1.6);
+
 // --- Three.js setup -----------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -75,7 +99,7 @@ atlasTexture.colorSpace = THREE.SRGBColorSpace;
 const materials = {
     opaque: new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true, alphaTest: 0.5 }),
     transparent: new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true, transparent: true, depthWrite: false }),
-    glow: new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true }),
+    glow: new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, alphaTest: 0.5 }),
     ghost: new THREE.MeshBasicMaterial({ map: atlasTexture, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, color: 0xbfe3ff })
 };
 
@@ -87,7 +111,26 @@ scene.fog = new THREE.Fog(0x87ceeb, 60, 140);
 
 // Sun, moon and stars follow the camera so they always sit on the horizon.
 const sky = new THREE.Group();
+// A gradient dome: horizon colour at the bottom blending to the zenith colour overhead.
+const skyDome = new THREE.Mesh(
+    new THREE.SphereGeometry(450, 24, 12),
+    new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false, fog: false,
+        uniforms: { horizon: { value: new THREE.Color(0x87ceeb) }, zenith: { value: new THREE.Color(0x3f7fd0) }, glowDir: { value: new THREE.Vector3(0, 1, 0) }, glowColour: { value: new THREE.Color(0xffa060) }, glowStrength: { value: 0 } },
+        vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform vec3 horizon; uniform vec3 zenith; uniform vec3 glowDir; uniform vec3 glowColour; uniform float glowStrength; varying vec3 vDir;
+            void main() {
+                float h = clamp(vDir.y, 0.0, 1.0);
+                vec3 c = mix(horizon, zenith, pow(h, 0.55));
+                float g = pow(max(dot(normalize(vDir), glowDir), 0.0), 6.0) * glowStrength * (1.0 - h);
+                c = mix(c, glowColour, clamp(g, 0.0, 0.85));
+                gl_FragColor = vec4(c, 1.0);
+            }`
+    })
+);
+skyDome.renderOrder = -10;
 const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(22, 32), new THREE.MeshBasicMaterial({ color: 0xfff1b0, fog: false }));
+const sunHalo = new THREE.Mesh(new THREE.CircleGeometry(48, 32), new THREE.MeshBasicMaterial({ color: 0xffd080, fog: false, transparent: true, opacity: 0.25, depthWrite: false }));
 const moonDisc = new THREE.Mesh(new THREE.CircleGeometry(14, 32), new THREE.MeshBasicMaterial({ color: 0xe8ecff, fog: false }));
 const starGeometry = new THREE.BufferGeometry();
 {
@@ -100,8 +143,10 @@ const starGeometry = new THREE.BufferGeometry();
     starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 }
 const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false }));
-sky.add(sunDisc, moonDisc, stars);
+sky.add(skyDome, sunHalo, sunDisc, moonDisc, stars);
 scene.add(sky);
+heldLight.visible = false;
+scene.add(heldLight);
 
 // Outline for the targeted block.
 const outline = new THREE.LineSegments(
@@ -236,17 +281,31 @@ function findSpawn() {
     return new THREE.Vector3(0.5, world.surfaceHeight(0, 0) + 1, 0.5);
 }
 
-function startNewWorld(seedString) {
+function startNewWorld(seedString, newMode = chosenMode) {
     createWorld(seedString || randomSeed());
     worldName = world.seedString;
+    mode = newMode === 'survival' ? 'survival' : 'creative';
     time.t = 0.3; time.day = 1;
     spawn = findSpawn();
     player.pos.copy(spawn);
     player.vel.set(0, 0, 0);
     player.yaw = Math.PI * 0.25; player.pitch = -0.1; player.flying = false;
+    resetSurvival(true);
+    selected = 0;
     dirty = true;
     rebuildAllChunks();
     beginPlaying();
+    if (mode === 'survival') toast('Survival: gather wood, craft tools (C) and light torches before dark');
+}
+
+function resetSurvival(fresh) {
+    survival.health = MAX_VITAL;
+    survival.hunger = MAX_VITAL;
+    survival.hungerClock = 0; survival.regenClock = 0; survival.starveClock = 0; survival.hurtCooldown = 0;
+    survival.fallStart = null;
+    if (fresh) { survival.inventory = mode === 'survival' ? starterInventory() : newInventory(); survival.deaths = 0; survival.kills = 0; }
+    mining.active = false;
+    clearEnemies();
 }
 
 function beginPlaying() {
@@ -257,19 +316,26 @@ function beginPlaying() {
     audio.startWind();
     renderHotbar();
     updateModeBadge();
+    renderVitals();
     lastAutosave = performance.now();
     requestPointerLock();
 }
 
 function setState(next) {
     state = next;
-    ui.hud.hidden = !(state === 'playing' || state === 'paused');
+    ui.hud.hidden = !(state === 'playing' || state === 'paused' || state === 'crafting');
     ui.startMenu.hidden = state !== 'menu';
     ui.pauseMenu.hidden = state !== 'paused';
+    ui.craftMenu.hidden = state !== 'crafting';
+    ui.deathMenu.hidden = state !== 'dead';
     ui.loading.hidden = state !== 'loading';
+    ui.vitals.hidden = mode !== 'survival';
     if (thumbnailMode) ui.hud.hidden = true;
     if (state !== 'playing' && document.pointerLockElement === canvas) document.exitPointerLock();
     keys.clear();
+    mouse.left = mouse.right = false;
+    mining.active = false;
+    updateMiningIndicator();
 }
 
 function randomSeed() {
@@ -281,13 +347,22 @@ function randomSeed() {
 function snapshot() {
     return {
         game: 'eoins-building-game',
-        version: 2,
+        version: 3,
         savedAt: new Date().toISOString(),
         seed: world.seedString,
         name: worldName,
+        mode,
         time: { t: time.t, day: time.day },
-        player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, flying: player.flying },
+        // a save written while dead records the respawn, not the corpse
+        player: state === 'dead'
+            ? { x: spawn.x, y: spawn.y, z: spawn.z, yaw: Math.PI * 0.25, pitch: -0.1, flying: false }
+            : { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, flying: player.flying },
         selected,
+        survival: mode === 'survival' ? {
+            health: state === 'dead' ? MAX_VITAL : survival.health, hunger: state === 'dead' ? MAX_VITAL : survival.hunger,
+            deaths: survival.deaths, kills: survival.kills,
+            inventory: serialiseInventory(survival.inventory)
+        } : null,
         edits: world.serialiseEdits()
     };
 }
@@ -324,6 +399,7 @@ function loadSave(data) {
     if (!data.edits.every(validEdit)) throw new Error('This saved world contains invalid block edits.');
     createWorld(data.seed);
     worldName = data.name || data.seed;
+    mode = data.mode === 'survival' ? 'survival' : 'creative';
     world.loadEdits(data.edits);
     time.t = typeof data.time?.t === 'number' ? data.time.t : 0.3;
     time.day = data.time?.day || 1;
@@ -332,12 +408,22 @@ function loadSave(data) {
         player.pos.set(data.player.x, data.player.y, data.player.z);
         player.yaw = data.player.yaw || 0;
         player.pitch = data.player.pitch || 0;
-        player.flying = !!data.player.flying;
+        player.flying = mode === 'creative' && !!data.player.flying;
     } else {
         player.pos.copy(spawn);
     }
     player.vel.set(0, 0, 0);
-    selected = Math.min(PLACEABLE.length - 1, Math.max(0, data.selected | 0));
+    resetSurvival(true);
+    if (mode === 'survival') {
+        const sv = data.survival || {};
+        survival.health = clampVital(sv.health, MAX_VITAL);
+        survival.hunger = clampVital(sv.hunger, MAX_VITAL);
+        survival.deaths = sv.deaths | 0;
+        survival.kills = sv.kills | 0;
+        survival.inventory = sv.inventory ? deserialiseInventory(sv.inventory) : starterInventory();
+        if (survival.health <= 0) survival.health = MAX_VITAL;
+    }
+    selected = Math.min(hotbarLength() - 1, Math.max(0, data.selected | 0));
     dirty = false;
     rebuildAllChunks();
     beginPlaying();
@@ -376,31 +462,68 @@ function refreshContinueButton() {
     ui.saveSummary.hidden = !save;
     if (save) {
         const when = save.savedAt ? new Date(save.savedAt).toLocaleString('en-GB') : 'earlier';
-        ui.saveSummary.textContent = `Seed "${save.seed}" · day ${save.time?.day || 1} · ${save.edits.length} changes · saved ${when}`;
+        ui.saveSummary.textContent = `${save.mode === 'survival' ? 'Survival' : 'Creative'} · seed "${save.seed}" · day ${save.time?.day || 1} · ${save.edits.length} changes · saved ${when}`;
     }
 }
 
 // --- Time of day -----------------------------------------------------------------------
-const palette = {
-    night: new THREE.Color(0x0a1026), dusk: new THREE.Color(0xd9814c), day: new THREE.Color(0x7fbdee),
-    sunDay: new THREE.Color(0xfff2d0), sunDusk: new THREE.Color(0xffa060), moon: new THREE.Color(0x7d90c8),
-    water: new THREE.Color(0x1f4f8a)
-};
-const skyColour = new THREE.Color();
+// Key colours for the sky, sampled by time of day (0 = midnight, 0.5 = noon). Each stop holds the
+// horizon and zenith colours, the sunlight colour and the fog tint, so dawn and dusk are unmistakable.
+const SKY_STOPS = [
+    { t: 0.00, horizon: 0x0b1230, zenith: 0x02040c, sun: 0x8090c0 },   // midnight
+    { t: 0.19, horizon: 0x1a1a3a, zenith: 0x05071a, sun: 0x8090c0 },   // deep night ending
+    { t: 0.23, horizon: 0xd8785a, zenith: 0x33386a, sun: 0xff9a5a },   // dawn glow
+    { t: 0.27, horizon: 0xf2bc8a, zenith: 0x5a8ed8, sun: 0xffc890 },   // sunrise
+    { t: 0.35, horizon: 0x9fd0f5, zenith: 0x3f84dc, sun: 0xfff0d0 },   // morning
+    { t: 0.50, horizon: 0xa8dcff, zenith: 0x3b7fe0, sun: 0xffffff },   // noon
+    { t: 0.66, horizon: 0x9fcdf0, zenith: 0x3d7ed6, sun: 0xfff0d0 },   // afternoon
+    { t: 0.73, horizon: 0xf2ab6a, zenith: 0x4a74c4, sun: 0xffb070 },   // golden hour
+    { t: 0.77, horizon: 0xd8704a, zenith: 0x34306a, sun: 0xff8050 },   // sunset
+    { t: 0.81, horizon: 0x3a2040, zenith: 0x080a20, sun: 0x8090c0 },   // dusk fades
+    { t: 1.00, horizon: 0x0b1230, zenith: 0x02040c, sun: 0x8090c0 }    // midnight again
+];
+const stopColours = SKY_STOPS.map(st => ({ t: st.t, horizon: new THREE.Color(st.horizon), zenith: new THREE.Color(st.zenith), sun: new THREE.Color(st.sun) }));
+const palette = { water: new THREE.Color(0x1f4f8a), moon: new THREE.Color(0x7d90c8) };
+const skyColour = new THREE.Color();      // horizon colour: also the fog colour
+const zenithColour = new THREE.Color();
 const sunColour = new THREE.Color();
 
 function sunElevation() { return Math.sin((time.t - 0.25) * Math.PI * 2); }
 
 function lerpColour(out, a, b, k) { return out.copy(a).lerp(b, Math.max(0, Math.min(1, k))); }
 
+function sampleSky(t) {
+    for (let i = 0; i < stopColours.length - 1; i++) {
+        const a = stopColours[i], b = stopColours[i + 1];
+        if (t >= a.t && t <= b.t) {
+            const k = (t - a.t) / (b.t - a.t);
+            lerpColour(skyColour, a.horizon, b.horizon, k);
+            lerpColour(zenithColour, a.zenith, b.zenith, k);
+            lerpColour(sunColour, a.sun, b.sun, k);
+            return;
+        }
+    }
+}
+
+// 0 at night, 1 in full daylight, with a soft ramp across dawn and dusk.
+function daylightAmount() {
+    const e = sunElevation();
+    return Math.max(0, Math.min(1, (e + 0.08) / 0.45));
+}
+
+function dayPhase(t = time.t) {
+    if (t < 0.2 || t >= 0.82) return 'Night';
+    if (t < 0.28) return 'Dawn';
+    if (t < 0.45) return 'Morning';
+    if (t < 0.55) return 'Noon';
+    if (t < 0.7) return 'Afternoon';
+    return 'Dusk';
+}
+
 function updateSky() {
     const e = sunElevation();
-    if (e < -0.12) skyColour.copy(palette.night);
-    else if (e < 0.06) lerpColour(skyColour, palette.night, palette.dusk, (e + 0.12) / 0.18);
-    else if (e < 0.4) lerpColour(skyColour, palette.dusk, palette.day, (e - 0.06) / 0.34);
-    else skyColour.copy(palette.day);
-
-    const daylight = Math.max(0, Math.min(1, (e + 0.05) / 0.5));
+    sampleSky(time.t);
+    const daylight = daylightAmount();
     const underwater = world && world.isLiquid(camera.position.x, camera.position.y, camera.position.z);
     const far = settings.renderDistance * CHUNK_SIZE - 10;
     if (underwater) {
@@ -408,36 +531,98 @@ function updateSky() {
         scene.fog.near = 1; scene.fog.far = 22;
     } else {
         scene.fog.color.copy(skyColour);
-        scene.fog.near = far * 0.55; scene.fog.far = far;
+        // night fog closes in a little so the dark feels close
+        scene.fog.near = far * (0.35 + daylight * 0.2); scene.fog.far = far * (0.8 + daylight * 0.2);
     }
-    scene.background = scene.fog.color;
+    scene.background = null;
+    skyDome.material.uniforms.horizon.value.copy(underwater ? scene.fog.color : skyColour);
+    skyDome.material.uniforms.zenith.value.copy(underwater ? scene.fog.color : zenithColour);
     ui.underwater.hidden = !underwater;
 
     const angle = (time.t - 0.25) * Math.PI * 2;
     const dir = new THREE.Vector3(Math.cos(angle) * 0.6, Math.sin(angle), Math.cos(angle) * 0.4).normalize();
     sun.position.copy(camera.position).addScaledVector(dir, 120);
     sun.target.position.copy(camera.position);
-    if (e > 0) {
-        lerpColour(sunColour, palette.sunDusk, palette.sunDay, e / 0.4);
+    if (e > -0.05) {
         sun.color.copy(sunColour);
-        sun.intensity = 0.25 + e * 1.1;
+        sun.intensity = 0.2 + Math.max(0, e) * 1.2;
     } else {
         sun.position.copy(camera.position).addScaledVector(dir, -120);
         sun.color.copy(palette.moon);
-        sun.intensity = 0.18;
+        sun.intensity = 0.14;
     }
-    ambient.intensity = 0.18 + daylight * 0.35;
-    hemisphere.intensity = 0.15 + daylight * 0.45;
+    ambient.intensity = 0.1 + daylight * 0.42;
+    hemisphere.intensity = 0.08 + daylight * 0.5;
     hemisphere.color.copy(skyColour);
+
+    // horizon glow around the sun at dawn and dusk
+    const lowSun = Math.max(0, 1 - Math.abs(e) / 0.3);
+    skyDome.material.uniforms.glowDir.value.copy(dir);
+    skyDome.material.uniforms.glowColour.value.copy(sunColour);
+    skyDome.material.uniforms.glowStrength.value = lowSun * 1.4;
 
     sky.position.copy(camera.position);
     sunDisc.position.copy(dir).multiplyScalar(380);
     sunDisc.lookAt(camera.position);
+    sunDisc.material.color.copy(sunColour).lerp(new THREE.Color(0xffffff), 0.4);
+    sunHalo.position.copy(dir).multiplyScalar(385);
+    sunHalo.lookAt(camera.position);
+    sunHalo.material.color.copy(sunColour);
+    sunHalo.material.opacity = 0.12 + lowSun * 0.3;
     moonDisc.position.copy(dir).multiplyScalar(-380);
     moonDisc.lookAt(camera.position);
-    sunDisc.visible = !underwater && e > -0.1;
-    moonDisc.visible = !underwater && e < 0.1;
+    sunDisc.visible = sunHalo.visible = !underwater && e > -0.12;
+    moonDisc.visible = !underwater && e < 0.12;
     stars.material.opacity = underwater ? 0 : Math.max(0, Math.min(1, -e * 3));
+
+    heldLight.visible = mode === 'survival' && state !== 'menu' && daylight < 0.6 && heldItem()?.item === 'block:19';
+    if (heldLight.visible) {
+        heldLight.position.copy(camera.position);
+        heldLight.intensity = (0.6 - daylight) * 1.4 + Math.sin(performance.now() / 90) * 0.08;
+    }
+    drawSkyArc(e, daylight);
+}
+
+// Small HUD widget: the sun and moon travel along an arc, so the time of day reads at a glance.
+const arcCtx = ui.skyArc.getContext('2d');
+function drawSkyArc(elevation, daylight) {
+    if (ui.hud.hidden) return;
+    const w = ui.skyArc.width, h = ui.skyArc.height;
+    const ctx = arcCtx;
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h - 8, r = 62;
+    // sky band coloured like the current horizon
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, `#${zenithColour.getHexString()}`);
+    grad.addColorStop(1, `#${skyColour.getHexString()}`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 8, Math.PI, 0); ctx.closePath(); ctx.fill();
+    // ground line
+    ctx.fillStyle = 'rgba(70, 110, 50, 0.9)';
+    ctx.fillRect(cx - r - 8, cy, (r + 8) * 2, 3);
+    // path
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.stroke();
+    ctx.setLineDash([]);
+    // time 0.25 = sunrise on the left, 0.75 = sunset on the right
+    const a = Math.PI + (time.t - 0.25) * Math.PI * 2;
+    const sx = cx + Math.cos(a) * r, sy = cy + Math.sin(a) * r;
+    const mx = cx - Math.cos(a) * r, my = cy - Math.sin(a) * r;
+    if (my <= cy + 4) {
+        ctx.fillStyle = '#e8ecff';
+        ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `#${skyColour.getHexString()}`;
+        ctx.beginPath(); ctx.arc(mx + 3.2, my - 1.5, 3.6, 0, Math.PI * 2); ctx.fill();
+    }
+    if (sy <= cy + 4) {
+        ctx.fillStyle = `rgba(255, 200, 90, ${0.3 + daylight * 0.3})`;
+        ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff3c0';
+        ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+    }
+    void elevation;
 }
 
 function formatClock() {
@@ -449,8 +634,8 @@ function formatClock() {
 
 function skipTime() {
     const e = sunElevation();
-    if (e > 0) { time.t = 0.78; }
-    else { if (time.t > 0.5) time.day += 1; time.t = 0.27; }
+    if (e > 0) { time.t = 0.76; }
+    else { if (time.t > 0.5) time.day += 1; time.t = 0.24; }
     toast(e > 0 ? 'Evening draws in' : 'A new day dawns');
 }
 
@@ -539,8 +724,13 @@ function updatePlayer(dt) {
     moveAxis('x', player.vel.x * dt);
     moveAxis('z', player.vel.z * dt);
     const falling = player.vel.y <= 0;
+    const impact = player.vel.y;
     const hitY = moveAxis('y', player.vel.y * dt);
     player.onGround = !player.flying && hitY && falling;
+    if (mode === 'survival' && player.onGround && !player.inWater && impact < -13) {
+        const damage = Math.round((-impact - 13) / 2.5 + 0.5);
+        if (damage > 0) damagePlayer(damage, null, 'fall');
+    }
 
     if (player.onGround && wish.lengthSq() > 0 && !player.inWater) {
         const under = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.1), Math.floor(player.pos.z));
@@ -549,8 +739,404 @@ function updatePlayer(dt) {
 
     if (player.pos.y < -20) { player.pos.copy(spawn); player.vel.set(0, 0, 0); toast('You fell out of the world and were returned to the start'); }
 
+    if (mode === 'survival') updateVitals(dt, wish.lengthSq() > 0);
     syncCamera();
     audio.updateWind(player.pos.y);
+}
+
+// --- Survival: vitals ---------------------------------------------------------------------------
+function clampVital(v, fallback) {
+    return Number.isFinite(v) ? Math.max(0, Math.min(MAX_VITAL, v)) : fallback;
+}
+
+function updateVitals(dt, moving) {
+    survival.hurtCooldown = Math.max(0, survival.hurtCooldown - dt);
+    // hunger ticks faster while sprinting or swimming
+    const effort = player.sprinting && moving ? 2.4 : player.inWater ? 1.6 : moving ? 1.25 : 1;
+    survival.hungerClock += dt * effort;
+    if (survival.hungerClock >= 24) {
+        survival.hungerClock -= 24;
+        if (survival.hunger > 0) { survival.hunger -= 1; renderVitals(); if (survival.hunger === 4) toast('You are getting hungry'); }
+    }
+    if (survival.hunger <= 0) {
+        survival.starveClock += dt;
+        if (survival.starveClock >= 4) { survival.starveClock = 0; damagePlayer(1, null, 'starving'); }
+    } else if (survival.hunger >= 14 && survival.health < MAX_VITAL) {
+        survival.regenClock += dt;
+        if (survival.regenClock >= 5) { survival.regenClock = 0; survival.health = Math.min(MAX_VITAL, survival.health + 1); renderVitals(); }
+    }
+}
+
+// A creature can only strike when nothing solid stands between it and the player. Torches,
+// bushes and water are not cover, so the line is sampled against solid blocks rather than raycast.
+function creatureCanReach(enemy) {
+    const from = enemy.pos.clone(); from.y += enemy.def.height * 0.7;
+    const to = player.pos.clone(); to.y += PLAYER.height * 0.6;
+    const dir = to.clone().sub(from);
+    const dist = dir.length();
+    if (dist < 1e-3) return true;
+    dir.divideScalar(dist);
+    const step = 0.2;
+    for (let d = step; d < dist; d += step) {
+        if (world.isSolid(from.x + dir.x * d, from.y + dir.y * d, from.z + dir.z * d)) return false;
+    }
+    return true;
+}
+
+function damagePlayer(amount, source, cause = 'attack') {
+    if (mode !== 'survival' || state !== 'playing' || amount <= 0) return false;
+    if (cause === 'attack' && survival.hurtCooldown > 0) return false;
+    if (source && source.def && !creatureCanReach(source)) return false;
+    survival.health = Math.max(0, survival.health - amount);
+    survival.hurtCooldown = 0.6;
+    survival.regenClock = 0;
+    audio.hurt();
+    ui.damageFlash.hidden = false;
+    ui.damageFlash.classList.add('show');
+    setTimeout(() => ui.damageFlash.classList.remove('show'), 120);
+    if (source && source.pos) {
+        const push = new THREE.Vector3().subVectors(player.pos, source.pos);
+        push.y = 0;
+        if (push.lengthSq() > 1e-4) { push.normalize().multiplyScalar(6); player.vel.x += push.x; player.vel.z += push.z; player.vel.y = Math.max(player.vel.y, 4); }
+    }
+    renderVitals();
+    if (survival.health <= 0) die(cause, source);
+    return true;
+}
+
+function die(cause, source) {
+    survival.deaths += 1;
+    audio.death();
+    const by = source ? `a ${source.def.name.toLowerCase()}` : cause === 'fall' ? 'a long fall' : cause === 'starving' ? 'hunger' : 'the night';
+    ui.deathSummary.textContent = `Killed by ${by} on day ${time.day}. ${survival.kills} creature${survival.kills === 1 ? '' : 's'} slain, ${world.edits.size} blocks changed. Your world and your inventory are kept.`;
+    setState('dead');
+    saveToLocal(true);
+}
+
+function respawn() {
+    player.pos.copy(spawn);
+    player.vel.set(0, 0, 0);
+    player.yaw = Math.PI * 0.25; player.pitch = -0.1;
+    resetSurvival(false);
+    // waking at the start always leaves a full stretch of daylight: a death from the afternoon
+    // onwards wakes you the next morning, and a death at night wakes you at dawn
+    if (time.t >= 0.6) { time.day += 1; time.t = 0.24; } else if (time.t < 0.24) time.t = 0.24;
+    renderVitals();
+    setState('playing');
+    requestPointerLock();
+    saveToLocal(true);
+    toast('You wake at the start. The world is as you left it.');
+}
+
+function eatHeld() {
+    const slot = heldItem();
+    const item = slot && ITEMS[slot.item];
+    if (!item || item.kind !== 'food') return false;
+    if (survival.hunger >= MAX_VITAL) { toast('You are not hungry'); return false; }
+    survival.hunger = Math.min(MAX_VITAL, survival.hunger + item.food);
+    survival.health = Math.min(MAX_VITAL, survival.health + Math.floor(item.food / 4));
+    consumeHeld(1);
+    audio.eat();
+    renderVitals();
+    dirty = true;
+    return true;
+}
+
+// Hearts for health and drumsticks for hunger, painted on small canvases.
+function renderVitals() {
+    if (mode !== 'survival') return;
+    drawVitalBar(ui.healthBar, survival.health, 'heart');
+    drawVitalBar(ui.hungerBar, survival.hunger, 'food');
+}
+
+function drawVitalBar(canvas, value, kind) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    for (let i = 0; i < 10; i++) {
+        const fill = Math.max(0, Math.min(2, value - i * 2));   // 0, 1 (half) or 2 (full)
+        const x = i * 22 + 2, y = 2;
+        if (kind === 'heart') drawHeart(ctx, x, y, 18, fill);
+        else drawDrumstick(ctx, x, y, 18, fill);
+    }
+}
+
+function drawHeart(ctx, x, y, size, fill) {
+    const path = () => {
+        ctx.beginPath();
+        ctx.moveTo(x + size / 2, y + size * 0.95);
+        ctx.bezierCurveTo(x - size * 0.15, y + size * 0.55, x + size * 0.05, y + size * 0.05, x + size / 2, y + size * 0.3);
+        ctx.bezierCurveTo(x + size * 0.95, y + size * 0.05, x + size * 1.15, y + size * 0.55, x + size / 2, y + size * 0.95);
+        ctx.closePath();
+    };
+    path(); ctx.fillStyle = 'rgba(20, 10, 14, 0.75)'; ctx.fill();
+    if (fill > 0) {
+        ctx.save(); path(); ctx.clip();
+        ctx.fillStyle = '#e23c3c';
+        ctx.fillRect(x, y, fill === 2 ? size : size / 2, size);
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillRect(x + size * 0.22, y + size * 0.3, size * 0.14, size * 0.14);
+        ctx.restore();
+    }
+    path(); ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+}
+
+function drawDrumstick(ctx, x, y, size, fill) {
+    const path = () => {
+        ctx.beginPath();
+        ctx.arc(x + size * 0.6, y + size * 0.42, size * 0.34, 0, Math.PI * 2);
+        ctx.moveTo(x + size * 0.42, y + size * 0.62);
+        ctx.lineTo(x + size * 0.12, y + size * 0.92);
+        ctx.lineTo(x + size * 0.04, y + size * 0.84);
+        ctx.lineTo(x + size * 0.34, y + size * 0.54);
+        ctx.closePath();
+    };
+    path(); ctx.fillStyle = 'rgba(20, 14, 8, 0.75)'; ctx.fill();
+    if (fill > 0) {
+        ctx.save(); path(); ctx.clip();
+        ctx.fillStyle = '#c8863c';
+        ctx.fillRect(x, y, fill === 2 ? size : size / 2, size);
+        ctx.fillStyle = '#f4ecd8';
+        ctx.fillRect(x + size * 0.02, y + size * 0.78, fill === 2 ? size * 0.25 : size * 0.15, size * 0.2);
+        ctx.restore();
+    }
+    path(); ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+}
+
+// --- Survival: inventory helpers ----------------------------------------------------------------
+function hotbarLength() { return mode === 'survival' ? survival.inventory.length : PLACEABLE.length; }
+
+function heldItem() { return mode === 'survival' ? survival.inventory[selected] : null; }
+
+function consumeHeld(n = 1) {
+    const slot = survival.inventory[selected];
+    if (!slot) return;
+    slot.count -= n;
+    if (slot.count <= 0) survival.inventory[selected] = null;
+    renderHotbar();
+}
+
+function wearHeldTool() {
+    const slot = survival.inventory[selected];
+    if (!slot || ITEMS[slot.item].kind !== 'tool') return;
+    slot.durability -= 1;
+    if (slot.durability <= 0) {
+        toast(`Your ${ITEMS[slot.item].name.toLowerCase()} broke`);
+        audio.break(BLOCK.PLANKS);
+        survival.inventory[selected] = null;
+    }
+    renderHotbar();
+}
+
+function giveItems(drops) {
+    let gained = 0;
+    for (const d of drops) {
+        const left = addToInventory(survival.inventory, d.item, d.count);
+        gained += d.count - left;
+        if (left > 0) toast('Your inventory is full');
+    }
+    if (gained) { audio.pickup(); renderHotbar(); }
+    return gained;
+}
+
+// --- Survival: timed mining -------------------------------------------------------------------------
+function updateMining(dt) {
+    if (mode !== 'survival' || !mouse.right || !hitInfo || blueprint.active) { mining.active = false; updateMiningIndicator(); return; }
+    const plan = hitInfo.y === 0 ? null : breakPlan(hitInfo.id, heldItem() ? ITEMS[heldItem().item] : null);
+    if (!plan) { mining.active = false; updateMiningIndicator(hitInfo.y === 0 ? 'The bedrock here is too hard to break' : null); return; }
+    if (!mining.active || mining.x !== hitInfo.x || mining.y !== hitInfo.y || mining.z !== hitInfo.z) {
+        Object.assign(mining, { active: true, x: hitInfo.x, y: hitInfo.y, z: hitInfo.z, progress: 0, seconds: plan.seconds, tickClock: 0 });
+    }
+    mining.progress += dt / plan.seconds;
+    mining.tickClock += dt;
+    if (mining.tickClock >= 0.28) { mining.tickClock = 0; audio.mineTick(hitInfo.id); }
+    const block = BLOCKS[hitInfo.id];
+    updateMiningIndicator(plan.collects ? null : `Needs a ${block.tier >= 2 ? 'stone or iron ' : ''}${block.tool} to collect`);
+    if (mining.progress >= 1) {
+        const id = hitInfo.id;
+        world.setBlock(hitInfo.x, hitInfo.y, hitInfo.z, BLOCK.AIR);
+        audio.break(id);
+        dirty = true;
+        if (plan.collects) giveItems(dropsFor(id));
+        if (block.tool || block.hardness >= 0.5) wearHeldTool();
+        mining.active = false;
+        mining.progress = 0;
+        updateMiningIndicator();
+    }
+}
+
+function updateMiningIndicator(label = null) {
+    const show = mining.active && mode === 'survival' && state === 'playing';
+    ui.mineProgress.hidden = !show;
+    if (show) ui.mineProgress.style.setProperty('--progress', `${Math.min(100, mining.progress * 100)}%`);
+    ui.targetLabel.hidden = !label || state !== 'playing';
+    if (label) { ui.targetLabel.textContent = label; ui.targetLabel.className = 'warn'; }
+}
+
+// --- Survival: creatures ------------------------------------------------------------------------------
+function clearEnemies() {
+    for (const e of enemies) { scene.remove(e.group); disposeEnemy(e); }
+    enemies.length = 0;
+    spawnClock = 0;
+}
+
+function removeEnemy(enemy) {
+    const i = enemies.indexOf(enemy);
+    if (i >= 0) enemies.splice(i, 1);
+    scene.remove(enemy.group);
+    disposeEnemy(enemy);
+}
+
+function isLitNearby(x, y, z, radius = 5) {
+    for (let dx = -radius; dx <= radius; dx++) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            for (let dy = -2; dy <= 3; dy++) {
+                if (BLOCKS[world.getBlock(x + dx, y + dy, z + dz)].glow) return true;
+            }
+        }
+    }
+    return false;
+}
+
+function spawnEnemy(type, x, y, z) {
+    const enemy = createEnemy(type, x, y, z);
+    enemies.push(enemy);
+    scene.add(enemy.group);
+    return enemy;
+}
+
+// Creatures appear on the dark surface some distance from the player, never where torches burn.
+function trySpawnEnemies(dt) {
+    if (mode !== 'survival' || daylightAmount() > 0.12) { spawnClock = 0; return; }
+    spawnClock += dt;
+    if (spawnClock < 2.5 || enemies.length >= MAX_ENEMIES) return;
+    spawnClock = 0;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const angle = Math.random() * Math.PI * 2, dist = 14 + Math.random() * 16;
+        const x = Math.floor(player.pos.x + Math.cos(angle) * dist), z = Math.floor(player.pos.z + Math.sin(angle) * dist);
+        const top = world.surfaceHeight(x, z);
+        const y = top + 1;
+        if (top <= SEA_LEVEL || y + 2 >= WORLD_HEIGHT) continue;
+        if (world.getBlock(x, y, z) !== BLOCK.AIR || world.getBlock(x, y + 1, z) !== BLOCK.AIR) continue;
+        if (isLitNearby(x, y, z)) continue;
+        const type = Math.random() < 0.55 ? 'brute' : 'lunger';
+        const enemy = spawnEnemy(type, x + 0.5, y, z + 0.5);
+        if (dist < 24) audio.growl(type === 'lunger');
+        void enemy;
+        return;
+    }
+}
+
+const enemyContext = {
+    hitsSolid: box => boxHitsSolid(box),
+    get playerPos() { return player.pos; },
+    get playerBox() { return playerBox(player.pos); },
+    damagePlayer: (amount, enemy) => damagePlayer(amount, enemy),
+    get daylight() { return daylightAmount(); },
+    inLiquid: (x, y, z) => world.isLiquid(x, y, z),
+    onLunge: () => audio.growl(true)
+};
+
+function updateEnemies(dt) {
+    if (!enemies.length) return;
+    for (const enemy of Array.from(enemies)) {
+        const alive = updateEnemy(enemy, dt, enemyContext);
+        const far = enemy.pos.distanceTo(player.pos) > 64;
+        if (!alive || far || enemy.pos.y < -10) removeEnemy(enemy);
+    }
+}
+
+// The creature under the crosshair within arm's reach, if it is nearer than any block.
+function targetedEnemy() {
+    const dir = cameraDirection();
+    let best = null, bestDist = hitInfo ? hitInfo.distance : ATTACK_REACH;
+    for (const enemy of enemies) {
+        const d = rayHitsEnemy(enemy, camera.position, dir, ATTACK_REACH);
+        if (d < bestDist) { best = enemy; bestDist = d; }
+    }
+    return best;
+}
+
+function attack(enemy) {
+    const slot = heldItem();
+    const item = slot ? ITEMS[slot.item] : null;
+    const damage = item && item.kind === 'tool' ? item.damage : HAND.damage;
+    const dead = hurtEnemy(enemy, damage, player.pos);
+    audio.hitEnemy();
+    if (item && item.kind === 'tool') wearHeldTool();
+    if (dead) {
+        survival.kills += 1;
+        audio.enemyDie();
+        const drops = rollDrops(enemy);
+        const gained = giveItems(drops);
+        toast(`${enemy.def.name} defeated${gained ? ': ' + drops.map(d => `${d.count} ${ITEMS[d.item].name.toLowerCase()}`).join(', ') : ''}`);
+        removeEnemy(enemy);
+        dirty = true;
+    }
+}
+
+// Left click: attack a creature in reach, eat the held food, or place the held block.
+function primaryAction() {
+    if (blueprint.active) { stampBlueprint(); return; }
+    if (mode !== 'survival') { placeBlock(); return; }
+    const enemy = targetedEnemy();
+    if (enemy) { attack(enemy); return; }
+    const slot = heldItem();
+    const item = slot ? ITEMS[slot.item] : null;
+    if (!item) return;
+    if (item.kind === 'food') eatHeld();
+    else if (item.kind === 'block') placeBlock();
+}
+
+// --- Survival: crafting ----------------------------------------------------------------------------------
+function openCrafting() {
+    if (mode !== 'survival') { toast('Crafting is part of Survival mode'); return; }
+    if (state !== 'playing') return;
+    setState('crafting');
+    renderRecipes();
+    audio.click();
+}
+
+function closeCrafting() {
+    if (state !== 'crafting') return;
+    setState('playing');
+    requestPointerLock();
+}
+
+function renderRecipes() {
+    ui.recipeList.innerHTML = '';
+    RECIPES.forEach((recipe, index) => {
+        const li = document.createElement('li');
+        const affordable = canCraft(survival.inventory, recipe);
+        li.className = affordable ? '' : 'unaffordable';
+        const icon = document.createElement('canvas');
+        icon.width = icon.height = 64;
+        drawItemIcon(icon, recipe.out, tiles);
+        const text = document.createElement('div');
+        const needs = Object.entries(recipe.needs).map(([key, n]) => {
+            const have = survival.inventory.filter(sl => sl && sl.item === key).reduce((a, sl) => a + sl.count, 0);
+            return `<b class="${have >= n ? '' : 'short'}">${n} ${ITEMS[key].name.toLowerCase()}</b> (${have})`;
+        }).join(' · ');
+        text.innerHTML = `<div class="name">${recipe.count > 1 ? recipe.count + ' × ' : ''}${ITEMS[recipe.out].name}</div><div class="needs">${needs}</div>`;
+        li.append(icon, text);
+        li.title = recipe.note || '';
+        li.addEventListener('click', () => craftRecipe(index));
+        ui.recipeList.appendChild(li);
+    });
+}
+
+function craftRecipe(index) {
+    const recipe = RECIPES[index];
+    if (!recipe) return false;
+    const result = craft(survival.inventory, recipe);
+    if (!result) { toast('You need more materials for that'); return false; }
+    if (result.full) { toast('No room in your inventory for that'); return false; }
+    audio.craft();
+    toast(`Crafted ${result.made} × ${ITEMS[recipe.out].name}`);
+    dirty = true;
+    renderRecipes();
+    renderHotbar();
+    return true;
 }
 
 // --- Targeting, placing and breaking ---------------------------------------------------------
@@ -579,13 +1165,21 @@ function placementIntersectsPlayer(x, y, z) {
 function placeBlock() {
     if (!hitInfo) return false;
     const x = hitInfo.x + hitInfo.nx, y = hitInfo.y + hitInfo.ny, z = hitInfo.z + hitInfo.nz;
-    const id = PLACEABLE[selected];
+    let id;
+    if (mode === 'survival') {
+        const slot = heldItem();
+        if (!slot || ITEMS[slot.item].kind !== 'block') return false;
+        id = ITEMS[slot.item].block;
+    } else {
+        id = PLACEABLE[selected];
+    }
     if (y < 0 || y >= WORLD_HEIGHT) return false;
     if (BLOCKS[id].solid && placementIntersectsPlayer(x, y, z)) return false;
     const existing = world.getBlock(x, y, z);
     if (existing !== BLOCK.AIR && !BLOCKS[existing].liquid) return false;
     world.setBlock(x, y, z, id);
     audio.place(id);
+    if (mode === 'survival') consumeHeld(1);
     dirty = true;
     return true;
 }
@@ -606,7 +1200,9 @@ function breakBlock() {
 
 function pickBlock() {
     if (!hitInfo) return;
-    const idx = PLACEABLE.indexOf(hitInfo.id);
+    const idx = mode === 'survival'
+        ? survival.inventory.findIndex(sl => sl && sl.item === `block:${hitInfo.id}`)
+        : PLACEABLE.indexOf(hitInfo.id);
     if (idx >= 0) { selected = idx; renderHotbar(); audio.click(); }
 }
 
@@ -681,6 +1277,7 @@ function renderBlueprintList() {
 }
 
 function toggleBlueprintMode(force) {
+    if (mode === 'survival') { blueprint.active = false; updateBlueprintGhost(); toast('Blueprints are a Creative mode tool'); return; }
     blueprint.active = force === undefined ? !blueprint.active : force;
     audio.click();
     updateBlueprintGhost();
@@ -694,9 +1291,15 @@ function cycleBlueprint(delta) {
 
 // --- HUD -----------------------------------------------------------------------------------------
 const hotbarCanvases = [];
+const HINTS = {
+    creative: 'WASD move · Space jump · Shift sprint · F fly · Left click place · Right click break · Middle click pick · Wheel or 1-9 choose block · Tab next page · B blueprints · N skip time · M mute · Esc menu · H hide hints',
+    survival: 'WASD move · Space jump · Shift sprint · Left click place, eat or attack · Hold right click to mine · Middle click pick · Wheel or 1-9 choose · Tab next page · C craft · N skip time · M mute · Esc menu · H hide hints'
+};
+
 function renderHotbar() {
+    const length = hotbarLength();
     const page = Math.floor(selected / HOTBAR_SLOTS);
-    const pages = Math.ceil(PLACEABLE.length / HOTBAR_SLOTS);
+    const pages = Math.ceil(length / HOTBAR_SLOTS);
     if (!hotbarCanvases.length) {
         ui.hotbar.innerHTML = '';
         for (let i = 0; i < HOTBAR_SLOTS; i++) {
@@ -707,9 +1310,15 @@ function renderHotbar() {
             const key = document.createElement('span');
             key.className = 'key';
             key.textContent = String(i + 1);
-            slot.append(c, key);
+            const count = document.createElement('span');
+            count.className = 'count';
+            const durability = document.createElement('span');
+            durability.className = 'durability';
+            durability.hidden = true;
+            durability.appendChild(document.createElement('i'));
+            slot.append(c, key, count, durability);
             ui.hotbar.appendChild(slot);
-            hotbarCanvases.push({ slot, canvas: c });
+            hotbarCanvases.push({ slot, canvas: c, count, durability });
         }
         const indicator = document.createElement('div');
         indicator.id = 'page-indicator';
@@ -717,14 +1326,44 @@ function renderHotbar() {
     }
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
         const idx = page * HOTBAR_SLOTS + i;
-        const { slot, canvas: c } = hotbarCanvases[i];
-        const id = PLACEABLE[idx];
+        const { slot, canvas: c, count, durability } = hotbarCanvases[i];
         slot.classList.toggle('selected', idx === selected);
-        slot.style.visibility = id === undefined ? 'hidden' : 'visible';
-        if (id !== undefined) drawBlockIcon(c, BLOCKS[id], tiles);
+        if (mode === 'survival') {
+            const entry = survival.inventory[idx];
+            slot.style.visibility = idx < length ? 'visible' : 'hidden';
+            slot.classList.toggle('empty', !entry);
+            if (entry) drawItemIcon(c, entry.item, tiles); else c.getContext('2d').clearRect(0, 0, c.width, c.height);
+            count.textContent = entry && entry.count > 1 ? String(entry.count) : '';
+            const item = entry && ITEMS[entry.item];
+            if (item && item.kind === 'tool') {
+                durability.hidden = false;
+                const ratio = entry.durability / item.durability;
+                durability.firstChild.style.width = `${Math.round(ratio * 100)}%`;
+                durability.classList.toggle('low', ratio < 0.25);
+            } else {
+                durability.hidden = true;
+            }
+        } else {
+            const id = PLACEABLE[idx];
+            slot.classList.remove('empty');
+            slot.style.visibility = id === undefined ? 'hidden' : 'visible';
+            if (id !== undefined) drawBlockIcon(c, BLOCKS[id], tiles);
+            count.textContent = '';
+            durability.hidden = true;
+        }
     }
     $('page-indicator').textContent = `${page + 1}/${pages}`;
-    ui.blockName.textContent = BLOCKS[PLACEABLE[selected]].name;
+    if (mode === 'survival') {
+        const entry = survival.inventory[selected];
+        const item = entry && ITEMS[entry.item];
+        if (!item) ui.blockName.textContent = 'Empty hand';
+        else if (item.kind === 'tool') ui.blockName.textContent = `${item.name} · ${entry.durability}/${item.durability}`;
+        else if (item.kind === 'food') ui.blockName.textContent = `${item.name} × ${entry.count} · restores ${item.food} hunger`;
+        else ui.blockName.textContent = `${item.name} × ${entry.count}`;
+    } else {
+        ui.blockName.textContent = BLOCKS[PLACEABLE[selected]].name;
+    }
+    ui.hintBar.textContent = HINTS[mode];
 }
 
 function updateModeBadge() {
@@ -734,8 +1373,11 @@ function updateModeBadge() {
     } else if (player.flying) {
         ui.modeBadge.textContent = 'Flying';
         ui.modeBadge.className = 'badge flying';
+    } else if (mode === 'survival') {
+        ui.modeBadge.textContent = 'Survival';
+        ui.modeBadge.className = 'badge survival';
     } else {
-        ui.modeBadge.textContent = 'Build mode';
+        ui.modeBadge.textContent = 'Creative';
         ui.modeBadge.className = 'badge';
     }
     ui.muteBadge.hidden = !audio.muted;
@@ -778,9 +1420,13 @@ document.addEventListener('mousemove', e => {
 canvas.addEventListener('mousedown', e => {
     if (state !== 'playing') return;
     if (document.pointerLockElement !== canvas) return;
-    if (e.button === 0) blueprint.active ? stampBlueprint() : placeBlock();
-    else if (e.button === 2) breakBlock();
+    if (e.button === 0) { mouse.left = true; primaryAction(); }
+    else if (e.button === 2) { mouse.right = true; if (mode !== 'survival') breakBlock(); }
     else if (e.button === 1) { e.preventDefault(); pickBlock(); }
+});
+window.addEventListener('mouseup', e => {
+    if (e.button === 0) mouse.left = false;
+    if (e.button === 2) mouse.right = false;
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -790,7 +1436,7 @@ window.addEventListener('wheel', e => {
     const delta = Math.sign(e.deltaY);
     if (!delta) return;
     if (blueprint.active) cycleBlueprint(delta);
-    else { selected = (selected + delta + PLACEABLE.length) % PLACEABLE.length; renderHotbar(); }
+    else { const n = hotbarLength(); selected = (selected + delta + n) % n; renderHotbar(); }
 }, { passive: false });
 
 window.addEventListener('keydown', e => {
@@ -801,8 +1447,10 @@ window.addEventListener('keydown', e => {
     if (e.code === 'Escape') {
         if (state === 'playing') pause();
         else if (state === 'paused') resume();
+        else if (state === 'crafting') closeCrafting();
         return;
     }
+    if (state === 'crafting' && e.code === 'KeyC') { closeCrafting(); return; }
     if (state !== 'playing') return;
     keys.add(e.code);
     if (e.code === 'Tab') e.preventDefault();
@@ -810,24 +1458,26 @@ window.addEventListener('keydown', e => {
         const n = parseInt(e.code.slice(5), 10);
         if (n >= 1 && n <= HOTBAR_SLOTS) {
             const idx = Math.floor(selected / HOTBAR_SLOTS) * HOTBAR_SLOTS + n - 1;
-            if (idx < PLACEABLE.length) { selected = idx; renderHotbar(); }
+            if (idx < hotbarLength()) { selected = idx; renderHotbar(); }
         }
     }
     switch (e.code) {
         case 'Tab': {
-            const pages = Math.ceil(PLACEABLE.length / HOTBAR_SLOTS);
+            const pages = Math.ceil(hotbarLength() / HOTBAR_SLOTS);
             const page = (Math.floor(selected / HOTBAR_SLOTS) + 1) % pages;
-            selected = Math.min(PLACEABLE.length - 1, page * HOTBAR_SLOTS + (selected % HOTBAR_SLOTS));
+            selected = Math.min(hotbarLength() - 1, page * HOTBAR_SLOTS + (selected % HOTBAR_SLOTS));
             renderHotbar();
             break;
         }
         case 'KeyF':
+            if (mode === 'survival') { toast('Flying is a Creative mode perk'); break; }
             player.flying = !player.flying;
             player.vel.y = 0;
             updateModeBadge();
             toast(player.flying ? 'Flying: Space to rise, Shift to descend' : 'Walking');
             break;
         case 'KeyB': toggleBlueprintMode(); break;
+        case 'KeyC': openCrafting(); break;
         case 'KeyR': if (blueprint.active) { blueprint.rotation = (blueprint.rotation + 1) & 3; updateBlueprintGhost(); } break;
         case 'BracketLeft': if (blueprint.active) cycleBlueprint(-1); break;
         case 'BracketRight': if (blueprint.active) cycleBlueprint(1); break;
@@ -855,7 +1505,7 @@ window.addEventListener('resize', () => {
 function pause() {
     if (state !== 'playing') return;
     setState('paused');
-    ui.pauseSummary.textContent = `Seed "${world.seedString}" · ${formatClock()} · ${world.edits.size} changes${dirty ? ' (unsaved)' : ''}`;
+    ui.pauseSummary.textContent = `${mode === 'survival' ? 'Survival' : 'Creative'} · seed "${world.seedString}" · ${formatClock()} · ${world.edits.size} changes${dirty ? ' (unsaved)' : ''}`;
     saveToLocal(true);
     updateModeBadge();
 }
@@ -878,14 +1528,37 @@ function showMenu() {
     setState('menu');
 }
 
-ui.btnNew.addEventListener('click', () => { audio.click(); startNewWorld(ui.seedInput.value.trim()); });
+ui.btnNew.addEventListener('click', () => { audio.click(); startNewWorld(ui.seedInput.value.trim(), chosenMode); });
+ui.modeOptions.forEach(button => button.addEventListener('click', () => {
+    audio.click();
+    chosenMode = button.dataset.mode;
+    settings.mode = chosenMode;
+    saveSettings();
+    syncModeOptions();
+}));
+function syncModeOptions() {
+    ui.modeOptions.forEach(b => {
+        const on = b.dataset.mode === chosenMode;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+}
+ui.btnCraftClose.addEventListener('click', () => { audio.click(); closeCrafting(); });
+ui.btnRespawn.addEventListener('click', () => { audio.click(); respawn(); });
+ui.btnDeathQuit.addEventListener('click', () => {
+    audio.click();
+    player.pos.copy(spawn);
+    resetSurvival(false);
+    saveToLocal(true);
+    showMenu();
+});
 ui.btnRandomSeed.addEventListener('click', () => { audio.click(); ui.seedInput.value = randomSeed(); });
 ui.btnContinue.addEventListener('click', () => {
     audio.click();
     try { loadSave(readLocalSave()); } catch (err) { alert(err.message); }
 });
 ui.btnResume.addEventListener('click', () => { audio.click(); resume(); });
-ui.btnSave.addEventListener('click', () => { audio.click(); saveToLocal(); pause(); ui.pauseSummary.textContent = `Seed "${world.seedString}" · ${formatClock()} · ${world.edits.size} changes`; });
+ui.btnSave.addEventListener('click', () => { audio.click(); saveToLocal(); pause(); ui.pauseSummary.textContent = `${mode === 'survival' ? 'Survival' : 'Creative'} · seed "${world.seedString}" · ${formatClock()} · ${world.edits.size} changes`; });
 ui.btnExport.addEventListener('click', () => { audio.click(); exportWorld(); });
 ui.btnImport.addEventListener('click', () => { audio.click(); ui.importFile.click(); });
 ui.btnImportStart.addEventListener('click', () => { audio.click(); ui.importFile.click(); });
@@ -904,10 +1577,11 @@ ui.renderDistance.addEventListener('change', () => {
 ui.btnQuit.addEventListener('click', () => {
     audio.click();
     saveToLocal(true);
+    clearEnemies();
     showMenu();
 });
 
-window.addEventListener('beforeunload', () => { if (state !== 'menu') saveToLocal(true); });
+window.addEventListener('beforeunload', () => { if (state !== 'menu' && state !== 'dead') saveToLocal(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && state !== 'menu') saveToLocal(true); });
 
 // --- Main loop -------------------------------------------------------------------------------------
@@ -922,8 +1596,14 @@ function frame(now) {
         if (time.t >= 1) { time.t -= 1; time.day += 1; }
         updatePlayer(dt);
         updateTarget();
+        if (mode === 'survival' && state === 'playing') {
+            updateMining(dt);
+            trySpawnEnemies(dt);
+            updateEnemies(dt);
+        }
         ui.clock.textContent = formatClock();
-        if (now - lastAutosave > 30000) saveToLocal(true); // position and time change constantly, so save regardless of edits
+        ui.clockPhase.textContent = dayPhase();
+        if (now - lastAutosave > 30000 && state === 'playing') saveToLocal(true); // position and time change constantly, so save regardless of edits
     } else if (state === 'menu') {
         // slow orbit around the spawn point behind the title screen
         menuAngle += dt * 0.08;
@@ -934,7 +1614,7 @@ function frame(now) {
         camera.lookAt(spawn.x, spawn.y + 2, spawn.z);
         player.pos.set(camera.position.x, camera.position.y, camera.position.z);
         outline.visible = false;
-    } else if (state === 'paused') {
+    } else if (state === 'paused' || state === 'crafting' || state === 'dead') {
         updateTarget();
     }
 
@@ -947,17 +1627,30 @@ function frame(now) {
 
 // --- Boot -------------------------------------------------------------------------------------------
 window.__game = {
-    get state() { return state; }, world: null, player, time, PLACEABLE, BLOCKS,
+    get state() { return state; }, get mode() { return mode; }, world: null, player, time, PLACEABLE, BLOCKS, ITEMS, RECIPES,
+    survival, enemies, mining, mouse,
     startNewWorld, loadSave, saveToLocal, readLocalSave, snapshot, placeBlock, breakBlock, pickBlock, skipTime,
     toggleBlueprintMode, stampBlueprint, cycleBlueprint, pause, resume, showMenu, setTime: (t) => { time.t = t; },
-    select: (i) => { selected = i; renderHotbar(); }, updateTarget, pendingChunks: () => buildQueue.length,
-    look: (yaw, pitch) => { player.yaw = yaw; player.pitch = pitch; }
+    select: (i) => { selected = i; renderHotbar(); }, get selected() { return selected; }, updateTarget, pendingChunks: () => buildQueue.length,
+    look: (yaw, pitch) => { player.yaw = yaw; player.pitch = pitch; },
+    primaryAction, openCrafting, closeCrafting, craftRecipe, spawnEnemy, damagePlayer, respawn, eatHeld, giveItems, heldItem,
+    // stamp a blueprint by index at a world position (used by the thumbnail capture and tests)
+    stampAt: (index, x, y, z, rotation = 0) => {
+        let placed = 0;
+        for (const c of blueprintCells(BLUEPRINTS[index], rotation)) {
+            if (y + c.y > 0 && y + c.y < WORLD_HEIGHT && world.setBlock(x + c.x, y + c.y, z + c.z, c.id)) placed++;
+        }
+        return placed;
+    },
+    sunElevation, daylightAmount, dayPhase, renderVitals
 };
 
 function boot() {
     hintsHidden = !!settings.hintsHidden;
     ui.hintBar.classList.toggle('hidden-hints', hintsHidden);
     ui.renderDistance.value = String(settings.renderDistance);
+    chosenMode = settings.mode === 'survival' ? 'survival' : 'creative';
+    syncModeOptions();
     updateModeBadge();
     renderHotbar();
     requestAnimationFrame(frame);
@@ -966,16 +1659,16 @@ function boot() {
         document.body.classList.add('thumbnail-mode');
         const overlay = document.createElement('div');
         overlay.id = 'thumbnail-overlay';
-        overlay.innerHTML = '<h1>Eoin\'s Building Game</h1><p>Voxel sandbox · procedural terrain · day and night · blueprints</p>';
+        overlay.innerHTML = '<h1>Eoin\'s Building Game</h1><p>Voxel sandbox · survival and creative · day and night · blueprints</p>';
         document.body.appendChild(overlay);
     }
 
     if (params.has('seed') || thumbnailMode) {
-        startNewWorld(params.get('seed') || 'portfolio');
+        startNewWorld(params.get('seed') || 'portfolio', params.get('mode') || 'creative');
         if (params.has('t')) time.t = parseFloat(params.get('t'));
         if (params.has('yaw')) player.yaw = parseFloat(params.get('yaw'));
         if (params.has('pitch')) player.pitch = parseFloat(params.get('pitch'));
-        if (params.has('fly')) player.flying = true;
+        if (params.has('fly') && mode === 'creative') player.flying = true;
         if (params.has('x')) player.pos.set(parseFloat(params.get('x')), parseFloat(params.get('y')), parseFloat(params.get('z')));
         updateModeBadge();
         if (thumbnailMode) document.exitPointerLock();

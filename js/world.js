@@ -101,7 +101,28 @@ export class Terrain {
             if (h >= 38) return BLOCK.STONE;
             return BLOCK.DIRT;
         }
+        if (y < 40 && this.oreAt(x, y, z)) return BLOCK.IRON_ORE;
         return BLOCK.STONE;
+    }
+
+    // Iron ore sits in small clusters inside the stone; a hashed cell test keeps it deterministic.
+    oreAt(x, y, z) {
+        const cell = hash2(Math.floor(x / 3) * 7919 + Math.floor(y / 3), Math.floor(z / 3), this.seed + 503);
+        if (cell > 0.09) return false;
+        return hash2(x * 31 + y, z, this.seed + 509) < 0.55;
+    }
+
+    // Berry bushes grow on open grass away from trees.
+    bushAt(x, z) {
+        if (hash2(x, z, this.seed + 601) >= 0.016) return false;
+        const h = this.height(x, z);
+        if (h <= SEA_LEVEL + 1 || h >= 38) return false;
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                if (this.treeAt(x + dx, z + dz)) return false;
+            }
+        }
+        return true;
     }
 
     // Fill a chunk's block array with generated terrain and trees.
@@ -114,6 +135,7 @@ export class Terrain {
                 for (let y = 0; y <= top; y++) {
                     data[blockIndex(lx, y, lz)] = this.blockAt(ox + lx, y, oz + lz, h);
                 }
+                if (h + 1 < WORLD_HEIGHT && this.bushAt(ox + lx, oz + lz)) data[blockIndex(lx, h + 1, lz)] = BLOCK.BERRY_BUSH;
             }
         }
         // trees may spill over from neighbouring columns, so scan a margin around the chunk

@@ -156,6 +156,61 @@ export class GameAudio {
         this.tone({ freq: 110, to: 60, duration: 0.25, type: 'sine', gain: 0.35 });
     }
 
+    // --- Survival ----------------------------------------------------------------------
+    mineTick(blockId) {
+        if (!this.ensure()) return;
+        const m = this.materialOf(blockId);
+        const freq = m === 'wood' ? 380 : m === 'soft' || m === 'sand' ? 300 : 1000;
+        this.noiseBurst({ duration: 0.05, freq: freq * (0.9 + Math.random() * 0.2), q: 2, gain: 0.2 });
+    }
+
+    hurt() {
+        if (!this.ensure()) return;
+        this.tone({ freq: 220, to: 90, duration: 0.25, type: 'sawtooth', gain: 0.25 });
+        this.noiseBurst({ duration: 0.18, freq: 500, sweepTo: 150, type: 'lowpass', gain: 0.5 });
+    }
+
+    hitEnemy() {
+        if (!this.ensure()) return;
+        this.noiseBurst({ duration: 0.09, freq: 700, q: 1.2, gain: 0.45 });
+        this.tone({ freq: 160, to: 70, duration: 0.12, type: 'triangle', gain: 0.3 });
+    }
+
+    enemyDie() {
+        if (!this.ensure()) return;
+        this.tone({ freq: 300, to: 60, duration: 0.5, type: 'sawtooth', gain: 0.2 });
+        this.noiseBurst({ duration: 0.4, freq: 900, sweepTo: 200, type: 'lowpass', gain: 0.4 });
+    }
+
+    growl(fast = false) {
+        if (!this.ensure()) return;
+        this.tone({ freq: fast ? 420 : 110, to: fast ? 700 : 70, duration: fast ? 0.2 : 0.5, type: 'sawtooth', gain: 0.12 });
+    }
+
+    eat() {
+        if (!this.ensure()) return;
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => this.ctx && this.noiseBurst({ duration: 0.08, freq: 600 + Math.random() * 300, type: 'lowpass', gain: 0.3 }), i * 110);
+        }
+    }
+
+    craft() {
+        if (!this.ensure()) return;
+        this.noiseBurst({ duration: 0.1, freq: 1400, q: 3, gain: 0.3 });
+        setTimeout(() => this.ctx && this.tone({ freq: 660, to: 990, duration: 0.15, type: 'triangle', gain: 0.15 }), 90);
+    }
+
+    pickup() {
+        if (!this.ensure()) return;
+        this.tone({ freq: 880, to: 1320, duration: 0.09, type: 'sine', gain: 0.12 });
+    }
+
+    death() {
+        if (!this.ensure()) return;
+        this.tone({ freq: 240, to: 40, duration: 1.4, type: 'sawtooth', gain: 0.25 });
+        this.noiseBurst({ duration: 1.2, freq: 400, sweepTo: 60, type: 'lowpass', gain: 0.5 });
+    }
+
     // Ambient wind: looping noise through a slowly wandering band-pass filter.
     startWind() {
         if (!this.ensure() || this.wind) return;

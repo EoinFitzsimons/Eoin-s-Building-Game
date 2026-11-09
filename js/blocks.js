@@ -274,6 +274,62 @@ const painters = {
         ctx.fillRect(TILE / 2 - 1, 4, 2, TILE - 8);
         ctx.fillRect(4, TILE / 2 - 1, TILE - 8, 2);
     },
+    torch(ctx, rnd) {
+        ctx.clearRect(0, 0, TILE, TILE);
+        // stick
+        ctx.fillStyle = shade([120, 86, 48], 1);
+        ctx.fillRect(13, 12, 6, 20);
+        ctx.fillStyle = shade([120, 86, 48], 0.75);
+        ctx.fillRect(17, 12, 2, 20);
+        // flame
+        ctx.fillStyle = 'rgb(255,120,30)';
+        ctx.fillRect(12, 6, 8, 7);
+        ctx.fillStyle = 'rgb(255,200,60)';
+        ctx.fillRect(13, 4, 6, 7);
+        ctx.fillStyle = 'rgb(255,250,200)';
+        ctx.fillRect(14, 6, 4, 4);
+        for (let i = 0; i < 6; i++) {
+            ctx.fillStyle = `rgba(255,${160 + Math.floor(rnd() * 80)},40,0.9)`;
+            ctx.fillRect(11 + Math.floor(rnd() * 10), 2 + Math.floor(rnd() * 4), 1, 1);
+        }
+    },
+    torchTop(ctx, rnd) {
+        ctx.clearRect(0, 0, TILE, TILE);
+        ctx.fillStyle = 'rgb(255,200,60)';
+        ctx.fillRect(13, 13, 6, 6);
+        ctx.fillStyle = 'rgb(255,250,200)';
+        ctx.fillRect(14, 14, 4, 4);
+        void rnd;
+    },
+    ironOre(ctx, rnd) {
+        painters.stone(ctx, rnd);
+        for (let i = 0; i < 9; i++) {
+            const x = 2 + Math.floor(rnd() * (TILE - 6)), y = 2 + Math.floor(rnd() * (TILE - 6));
+            ctx.fillStyle = shade([196, 140, 96], 1 + (rnd() - 0.5) * 0.3);
+            ctx.fillRect(x, y, 3, 2);
+            ctx.fillRect(x + 1, y - 1, 1, 4);
+            ctx.fillStyle = shade([232, 190, 150], 1);
+            ctx.fillRect(x + 1, y, 1, 1);
+        }
+    },
+    berryBush(ctx, rnd) {
+        ctx.clearRect(0, 0, TILE, TILE);
+        for (let y = 0; y < TILE; y++) {
+            for (let x = 0; x < TILE; x++) {
+                const dx = x - TILE / 2, dy = y - TILE / 2;
+                if (dx * dx + dy * dy > 210 || rnd() < 0.12) continue;
+                ctx.fillStyle = shade([44, 104, 40], 1 + (rnd() - 0.5) * 0.5);
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+        for (let i = 0; i < 9; i++) {
+            const x = 4 + Math.floor(rnd() * (TILE - 8)), y = 4 + Math.floor(rnd() * (TILE - 8));
+            ctx.fillStyle = shade([190, 40, 70], 1 + (rnd() - 0.5) * 0.3);
+            ctx.fillRect(x, y, 2, 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.fillRect(x, y, 1, 1);
+        }
+    },
     water(ctx, rnd) {
         ctx.clearRect(0, 0, TILE, TILE);
         ctx.fillStyle = 'rgba(40,110,200,0.62)';
@@ -292,28 +348,33 @@ export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 // `solid` controls collision, `transparent` controls render pass and face culling, `glow` renders unlit.
 export const BLOCKS = [
     { id: 0, name: 'Air', faces: null, solid: false, transparent: true },
-    { id: 1, name: 'Grass', faces: ['grassTop', 'dirt', 'grassSide'], sound: 'soft' },
-    { id: 2, name: 'Dirt', faces: ['dirt', 'dirt', 'dirt'], sound: 'soft' },
-    { id: 3, name: 'Stone', faces: ['stone', 'stone', 'stone'], sound: 'stone' },
-    { id: 4, name: 'Cobblestone', faces: ['cobble', 'cobble', 'cobble'], sound: 'stone' },
-    { id: 5, name: 'Stone bricks', faces: ['stoneBricks', 'stoneBricks', 'stoneBricks'], sound: 'stone' },
-    { id: 6, name: 'Mossy stone', faces: ['mossyStone', 'mossyStone', 'mossyStone'], sound: 'stone' },
-    { id: 7, name: 'Sand', faces: ['sand', 'sand', 'sand'], sound: 'sand' },
-    { id: 8, name: 'Sandstone', faces: ['sandstone', 'sandstone', 'sandstone'], sound: 'stone' },
-    { id: 9, name: 'Gravel', faces: ['gravel', 'gravel', 'gravel'], sound: 'sand' },
-    { id: 10, name: 'Snow', faces: ['snow', 'dirt', 'snowSide'], sound: 'soft' },
-    { id: 11, name: 'Oak log', faces: ['logTop', 'logTop', 'logSide'], sound: 'wood' },
-    { id: 12, name: 'Leaves', faces: ['leaves', 'leaves', 'leaves'], cutout: true, sound: 'leaves' },
-    { id: 13, name: 'Planks', faces: ['planks', 'planks', 'planks'], sound: 'wood' },
-    { id: 14, name: 'Brick', faces: ['brick', 'brick', 'brick'], sound: 'stone' },
-    { id: 15, name: 'Roof tiles', faces: ['roofTile', 'roofTile', 'roofTile'], sound: 'stone' },
-    { id: 16, name: 'Glass', faces: ['glass', 'glass', 'glass'], transparent: true, sound: 'glass' },
-    { id: 17, name: 'Lantern', faces: ['lantern', 'lantern', 'lantern'], glow: true, sound: 'glass' },
-    { id: 18, name: 'Water', faces: ['water', 'water', 'water'], transparent: true, solid: false, liquid: true, sound: 'water' }
+    { id: 1, name: 'Grass', faces: ['grassTop', 'dirt', 'grassSide'], sound: 'soft', tool: 'shovel', hardness: 1.0 },
+    { id: 2, name: 'Dirt', faces: ['dirt', 'dirt', 'dirt'], sound: 'soft', tool: 'shovel', hardness: 0.9 },
+    { id: 3, name: 'Stone', faces: ['stone', 'stone', 'stone'], sound: 'stone', tool: 'pickaxe', hardness: 3.0, tier: 1 },
+    { id: 4, name: 'Cobblestone', faces: ['cobble', 'cobble', 'cobble'], sound: 'stone', tool: 'pickaxe', hardness: 3.4, tier: 1 },
+    { id: 5, name: 'Stone bricks', faces: ['stoneBricks', 'stoneBricks', 'stoneBricks'], sound: 'stone', tool: 'pickaxe', hardness: 3.4, tier: 1 },
+    { id: 6, name: 'Mossy stone', faces: ['mossyStone', 'mossyStone', 'mossyStone'], sound: 'stone', tool: 'pickaxe', hardness: 3.4, tier: 1 },
+    { id: 7, name: 'Sand', faces: ['sand', 'sand', 'sand'], sound: 'sand', tool: 'shovel', hardness: 0.9 },
+    { id: 8, name: 'Sandstone', faces: ['sandstone', 'sandstone', 'sandstone'], sound: 'stone', tool: 'pickaxe', hardness: 2.2, tier: 1 },
+    { id: 9, name: 'Gravel', faces: ['gravel', 'gravel', 'gravel'], sound: 'sand', tool: 'shovel', hardness: 1.1 },
+    { id: 10, name: 'Snow', faces: ['snow', 'dirt', 'snowSide'], sound: 'soft', tool: 'shovel', hardness: 0.6 },
+    { id: 11, name: 'Oak log', faces: ['logTop', 'logTop', 'logSide'], sound: 'wood', tool: 'axe', hardness: 2.6 },
+    { id: 12, name: 'Leaves', faces: ['leaves', 'leaves', 'leaves'], cutout: true, sound: 'leaves', hardness: 0.45 },
+    { id: 13, name: 'Planks', faces: ['planks', 'planks', 'planks'], sound: 'wood', tool: 'axe', hardness: 2.2 },
+    { id: 14, name: 'Brick', faces: ['brick', 'brick', 'brick'], sound: 'stone', tool: 'pickaxe', hardness: 3.4, tier: 1 },
+    { id: 15, name: 'Roof tiles', faces: ['roofTile', 'roofTile', 'roofTile'], sound: 'stone', tool: 'pickaxe', hardness: 2.8, tier: 1 },
+    { id: 16, name: 'Glass', faces: ['glass', 'glass', 'glass'], transparent: true, sound: 'glass', hardness: 0.5 },
+    { id: 17, name: 'Lantern', faces: ['lantern', 'lantern', 'lantern'], glow: true, sound: 'glass', hardness: 0.6 },
+    { id: 18, name: 'Water', faces: ['water', 'water', 'water'], transparent: true, solid: false, liquid: true, sound: 'water' },
+    { id: 19, name: 'Torch', faces: ['torchTop', 'torchTop', 'torch'], glow: true, cutout: true, solid: false, sound: 'wood', hardness: 0.15 },
+    { id: 20, name: 'Iron ore', faces: ['ironOre', 'ironOre', 'ironOre'], sound: 'stone', tool: 'pickaxe', hardness: 5.0, tier: 2 },
+    { id: 21, name: 'Berry bush', faces: ['berryBush', 'berryBush', 'berryBush'], cutout: true, solid: false, sound: 'leaves', hardness: 0.35 }
 ];
 for (const b of BLOCKS) {
     if (b.solid === undefined) b.solid = true;
     if (b.transparent === undefined) b.transparent = false;
+    if (b.tool === undefined) b.tool = null;
+    if (b.tier === undefined) b.tier = 0;          // minimum tool tier needed to collect the block in Survival
     if (b.faces) b.tiles = b.faces.map(f => TILE_INDEX[f]);
 }
 
@@ -365,9 +426,10 @@ export function drawBlockIcon(canvas, block, tiles) {
     const s = size * 0.46;
     const cx = size / 2, cy = size / 2;
     ctx.imageSmoothingEnabled = false;
-    // top face
+    // top face: a diamond whose top point is at (cx, cy - s) and whose front point is at (cx, cy),
+    // so it sits on the two side faces rather than sinking between them
     ctx.save();
-    ctx.setTransform(s / TILE, (s / TILE) * 0.5, -(s / TILE), (s / TILE) * 0.5, cx, cy - s * 0.5);
+    ctx.setTransform(s / TILE, (s / TILE) * 0.5, -(s / TILE), (s / TILE) * 0.5, cx, cy - s);
     ctx.drawImage(top, 0, 0);
     ctx.restore();
     // left face
