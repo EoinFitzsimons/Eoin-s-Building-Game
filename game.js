@@ -353,10 +353,14 @@ function snapshot() {
         name: worldName,
         mode,
         time: { t: time.t, day: time.day },
-        player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, flying: player.flying },
+        // a save written while dead records the respawn, not the corpse
+        player: state === 'dead'
+            ? { x: spawn.x, y: spawn.y, z: spawn.z, yaw: Math.PI * 0.25, pitch: -0.1, flying: false }
+            : { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, flying: player.flying },
         selected,
         survival: mode === 'survival' ? {
-            health: survival.health, hunger: survival.hunger, deaths: survival.deaths, kills: survival.kills,
+            health: state === 'dead' ? MAX_VITAL : survival.health, hunger: state === 'dead' ? MAX_VITAL : survival.hunger,
+            deaths: survival.deaths, kills: survival.kills,
             inventory: serialiseInventory(survival.inventory)
         } : null,
         edits: world.serialiseEdits()
