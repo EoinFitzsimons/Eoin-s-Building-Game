@@ -366,9 +366,9 @@ export const BLOCKS = [
     { id: 16, name: 'Glass', faces: ['glass', 'glass', 'glass'], transparent: true, sound: 'glass', hardness: 0.5 },
     { id: 17, name: 'Lantern', faces: ['lantern', 'lantern', 'lantern'], glow: true, sound: 'glass', hardness: 0.6 },
     { id: 18, name: 'Water', faces: ['water', 'water', 'water'], transparent: true, solid: false, liquid: true, sound: 'water' },
-    { id: 19, name: 'Torch', faces: ['torchTop', 'torchTop', 'torch'], glow: true, cutout: true, solid: false, sound: 'wood', hardness: 0.15 },
+    { id: 19, name: 'Torch', faces: ['torchTop', 'torchTop', 'torch'], model: 'cross', glow: true, cutout: true, solid: false, sound: 'wood', hardness: 0.15 },
     { id: 20, name: 'Iron ore', faces: ['ironOre', 'ironOre', 'ironOre'], sound: 'stone', tool: 'pickaxe', hardness: 5.0, tier: 2 },
-    { id: 21, name: 'Berry bush', faces: ['berryBush', 'berryBush', 'berryBush'], cutout: true, solid: false, sound: 'leaves', hardness: 0.35 }
+    { id: 21, name: 'Berry bush', faces: ['berryBush', 'berryBush', 'berryBush'], model: 'cross', cutout: true, solid: false, sound: 'leaves', hardness: 0.35 }
 ];
 for (const b of BLOCKS) {
     if (b.solid === undefined) b.solid = true;
@@ -426,6 +426,12 @@ export function drawBlockIcon(canvas, block, tiles) {
     const s = size * 0.46;
     const cx = size / 2, cy = size / 2;
     ctx.imageSmoothingEnabled = false;
+    if (block.model === 'cross') {
+        // sprite blocks are shown flat, as they appear in the world
+        const w = size * 0.78;
+        ctx.drawImage(side, cx - w / 2, cy - w / 2, w, w);
+        return;
+    }
     // top face: a diamond whose top point is at (cx, cy - s) and whose front point is at (cx, cy),
     // so it sits on the two side faces rather than sinking between them
     ctx.save();

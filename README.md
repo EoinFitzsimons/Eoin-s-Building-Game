@@ -14,6 +14,7 @@ Choose **Creative** or **Survival** on the start menu, click **New world** (or *
 | --- | --- |
 | Move | `W` `A` `S` `D` |
 | Jump | `Space` |
+| Swim up / climb out of water | hold `Space` (swim towards the bank to climb onto it) |
 | Sprint | hold `Shift` |
 | Toggle flying (Creative) | `F` (hold `Space` to rise, `Shift` to descend) |
 | Look | move the mouse |
@@ -87,7 +88,7 @@ Handy URL parameters for testing: `?seed=<word>` skips the menu and starts a new
 | `js/enemies.js` | Night creatures: box-built meshes, movement and collision, brute and lunger behaviour, hit detection and drops. |
 | `js/audio.js` | Web Audio synthesiser for clicks, footsteps, wind and the Survival sounds (mining ticks, hits, growls, eating, crafting). |
 
-- **Rendering** – Three.js (0.154) with a single `MeshLambertMaterial` atlas for opaque blocks, a separate transparent pass for glass, leaves and water, and an emissive pass for lanterns. Chunk meshes are rebuilt through a small queue so that generation never blocks a frame for long.
+- **Rendering** – Three.js (0.154) with a single `MeshLambertMaterial` atlas for opaque blocks, a separate transparent pass for glass, leaves and water, and an emissive pass for lanterns and torches. Torches and berry bushes are drawn as two crossed sprite quads rather than cubes, so they read as small objects instead of hollow boxes. Chunk meshes are rebuilt through a small queue so that generation never blocks a frame for long.
 - **Terrain** – fractal Brownian motion over a hashed value-noise function gives continents, hills and ridges; a second noise layer picks biomes (sand near the water line, gravel in low ground, snow on peaks) and a hashed per-column check plants trees on open grass.
 - **Terrain extras** – iron ore is scattered through the stone in small hashed clusters, and berry bushes are planted on open grass away from trees.
 - **Persistence** – saves are `{ version, seed, mode, time, player, survival, edits: [[x, y, z, blockId], ...] }`, where `survival` holds health, hunger, kills, deaths and the inventory (or `null` in Creative). The same shape is used for the JSON export, so an exported file can be imported anywhere; older saves without a mode load as Creative.

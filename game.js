@@ -694,8 +694,10 @@ function updatePlayer(dt) {
     if (keys.has('KeyA')) wish.sub(right);
     if (wish.lengthSq() > 0) wish.normalize();
 
-    const feet = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + 0.4), Math.floor(player.pos.z));
-    player.inWater = !!BLOCKS[feet].liquid;
+    const bx = Math.floor(player.pos.x), bz = Math.floor(player.pos.z);
+    const feetY = Math.floor(player.pos.y + 0.1);
+    const wasInWater = player.inWater;
+    player.inWater = !!BLOCKS[world.getBlock(bx, feetY, bz)].liquid || !!BLOCKS[world.getBlock(bx, Math.floor(player.pos.y + 0.9), bz)].liquid;
     player.sprinting = keys.has('ShiftLeft') || keys.has('ShiftRight');
 
     let speed = player.flying ? 11 : player.inWater ? 2.6 : player.sprinting ? 6.8 : 4.3;
@@ -710,14 +712,30 @@ function updatePlayer(dt) {
         player.vel.y += (vy - player.vel.y) * Math.min(1, 10 * dt);
     } else if (player.inWater) {
         player.vel.y -= 6 * dt;
-        if (keys.has('Space')) player.vel.y += 16 * dt;
-        player.vel.y = Math.max(-3, Math.min(3, player.vel.y));
+        if (keys.has('Space')) player.vel.y += 22 * dt;
+        player.vel.y = Math.max(-3, Math.min(4, player.vel.y));
+        // Climb out: swimming towards a bank with headroom above it hoists the player onto it.
+        // The impulse is sized to the bank's height, so shores a block above the surface work too.
+        if (keys.has('Space') && wish.lengthSq() > 0) {
+            const ax = Math.floor(player.pos.x + wish.x * 0.75), az = Math.floor(player.pos.z + wish.z * 0.75);
+            const bank = BLOCKS[world.getBlock(ax, feetY, az)].solid || BLOCKS[world.getBlock(ax, feetY + 1, az)].solid;
+            const top = BLOCKS[world.getBlock(ax, feetY + 1, az)].solid ? feetY + 2 : feetY + 1;
+            const headroom = !BLOCKS[world.getBlock(ax, top, az)].solid && !BLOCKS[world.getBlock(ax, top + 1, az)].solid;
+            const rise = top - player.pos.y;
+            if (bank && headroom && rise <= 2.2) {
+                const needed = Math.sqrt(2 * GRAVITY * Math.max(0.2, rise + 0.15));
+                player.vel.y = Math.max(player.vel.y, Math.min(needed, 12));
+            }
+        }
     } else {
         player.vel.y -= GRAVITY * dt;
         player.vel.y = Math.max(-40, player.vel.y);
         if (keys.has('Space') && player.onGround) {
             player.vel.y = JUMP_SPEED;
             player.onGround = false;
+        } else if (keys.has('Space') && wasInWater && player.vel.y > 0) {
+            // leaving the surface with the jump key held: finish the hop onto the shore
+            player.vel.y = Math.max(player.vel.y, JUMP_SPEED * 0.8);
         }
     }
 
