@@ -715,12 +715,17 @@ function updatePlayer(dt) {
         if (keys.has('Space')) player.vel.y += 22 * dt;
         player.vel.y = Math.max(-3, Math.min(4, player.vel.y));
         // Climb out: swimming towards a bank with headroom above it hoists the player onto it.
+        // The impulse is sized to the bank's height, so shores a block above the surface work too.
         if (keys.has('Space') && wish.lengthSq() > 0) {
             const ax = Math.floor(player.pos.x + wish.x * 0.75), az = Math.floor(player.pos.z + wish.z * 0.75);
             const bank = BLOCKS[world.getBlock(ax, feetY, az)].solid || BLOCKS[world.getBlock(ax, feetY + 1, az)].solid;
             const top = BLOCKS[world.getBlock(ax, feetY + 1, az)].solid ? feetY + 2 : feetY + 1;
             const headroom = !BLOCKS[world.getBlock(ax, top, az)].solid && !BLOCKS[world.getBlock(ax, top + 1, az)].solid;
-            if (bank && headroom && top - player.pos.y <= 1.6) player.vel.y = Math.max(player.vel.y, JUMP_SPEED * 0.9);
+            const rise = top - player.pos.y;
+            if (bank && headroom && rise <= 2.2) {
+                const needed = Math.sqrt(2 * GRAVITY * Math.max(0.2, rise + 0.15));
+                player.vel.y = Math.max(player.vel.y, Math.min(needed, 12));
+            }
         }
     } else {
         player.vel.y -= GRAVITY * dt;
