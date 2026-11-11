@@ -337,6 +337,10 @@ export function meshRegion(getBlock, x0, y0, z0, sx, sy, sz, options = {}) {
                 if (id === BLOCK.AIR) continue;
                 const block = BLOCKS[id];
                 const pass = block.glow ? passes.glow : (block.transparent ? passes.transparent : passes.opaque);
+                if (block.model === 'cross') {
+                    emitCross(pass, x, y, z, block.tiles[2], block.glow ? 1 : 0.9);
+                    continue;
+                }
                 for (const face of FACES) {
                     const nx = x + face.dir[0], ny = y + face.dir[1], nz = z + face.dir[2];
                     const other = getBlock(nx, ny, nz);
@@ -383,6 +387,35 @@ export function meshRegion(getBlock, x0, y0, z0, sx, sy, sz, options = {}) {
         }
     }
     return passes;
+}
+
+// Two crossed, double-sided quads on the block's diagonals, as used for torches and plants.
+// They have no faces to cull, so the whole model is emitted whenever the block is present.
+const CROSS_PLANES = [
+    [[0.1, 0.1], [0.9, 0.9]],
+    [[0.9, 0.1], [0.1, 0.9]]
+];
+function emitCross(pass, x, y, z, tile, light) {
+    const [u0, v0, u1, v1] = tileUV(tile);
+    for (const [[ax, az], [bx, bz]] of CROSS_PLANES) {
+        for (const flip of [false, true]) {
+            const base = pass.positions.length / 3;
+            const corners = flip
+                ? [[bx, 0, bz], [ax, 0, az], [ax, 1, az], [bx, 1, bz]]
+                : [[ax, 0, az], [bx, 0, bz], [bx, 1, bz], [ax, 1, az]];
+            const nx = flip ? (az - bz) : (bz - az), nz = flip ? (bx - ax) : (ax - bx);
+            const len = Math.hypot(nx, nz) || 1;
+            for (let c = 0; c < 4; c++) {
+                const k = corners[c];
+                pass.positions.push(x + k[0], y + k[1], z + k[2]);
+                pass.normals.push(nx / len, 0, nz / len);
+                const uv = UV_CORNERS[c];
+                pass.uvs.push(uv[0] ? u1 : u0, uv[1] ? v1 : v0);
+                pass.colours.push(light, light, light);
+            }
+            pass.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+    }
 }
 
 function newBuffers() {
